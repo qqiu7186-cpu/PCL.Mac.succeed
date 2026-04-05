@@ -70,6 +70,10 @@ struct ClientManifestTests {
         #expect(forgeModernLine.lowerBound == 17)
         #expect(forgeModernLine.upperBound == 26)
 
+        let forge26Line = manifest.supportedJavaMajorRange(for: .init("1.21.1"), modLoader: .forge, modLoaderVersion: "26.1.1")
+        #expect(forge26Line.lowerBound == 21)
+        #expect(forge26Line.upperBound == 26)
+
         let neoForgeLegacyLine = manifest.supportedJavaMajorRange(for: .init("1.20.5"), modLoader: .neoforge, modLoaderVersion: "20.6.90")
         #expect(neoForgeLegacyLine.lowerBound == 21)
         #expect(neoForgeLegacyLine.upperBound == 21)

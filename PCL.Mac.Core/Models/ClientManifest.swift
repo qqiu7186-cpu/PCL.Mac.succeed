@@ -63,7 +63,11 @@ public class ClientManifest: Decodable {
                     } else if minecraftVersion <= .init("1.20.1") {
                         maxMajor = 17
                     } else if let loaderLineMajor {
-                        maxMajor = loaderLineMajor < 50 ? 17 : 26
+                        if loaderLineMajor < 21 {
+                            maxMajor = 17
+                        } else {
+                            maxMajor = 26
+                        }
                     } else if minecraftVersion <= .init("1.20.4") {
                         maxMajor = 17
                     } else {

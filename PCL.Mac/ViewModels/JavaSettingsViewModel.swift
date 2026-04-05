@@ -13,6 +13,7 @@ class JavaSettingsViewModel: ObservableObject {
     private static let javaRuntimeListMirrorKey: String = "java-runtime-all-json"
     private static let supportedJavaMajors: ClosedRange<Int> = 8...26
     private static let azulMetadataBaseURL = "https://api.azul.com/metadata/v1/zulu/packages/"
+    private static let adoptiumAPIBaseURL = "https://api.adoptium.net/v3"
     private static let dateFormatter: DateFormatter = {
         let formatter: DateFormatter = .init()
         formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"
@@ -87,15 +88,24 @@ class JavaSettingsViewModel: ObservableObject {
                 return []
             }
         }()
+        async let adoptiumDownloadsTask: [JavaDownloadPackage] = {
+            do {
+                return try await fetchAdoptiumJavaDownloads(forArchitecture: architecture)
+            } catch {
+                warn("Temurin Java 列表获取失败：\(error.localizedDescription)")
+                return []
+            }
+        }()
 
         let mojangDownloads = await mojangDownloadsTask
         let azulDownloads = await azulDownloadsTask
+        let adoptiumDownloads = await adoptiumDownloadsTask
 
         let candidates: [JavaDownloadPackage]
         if includeAllProviders {
-            candidates = mojangDownloads + azulDownloads
+            candidates = mojangDownloads + azulDownloads + adoptiumDownloads
         } else {
-            candidates = mergeDownloads(primary: mojangDownloads, secondary: azulDownloads)
+            candidates = mergeDownloads(primary: mojangDownloads, secondary: azulDownloads + adoptiumDownloads)
         }
 
         guard !candidates.isEmpty else {
@@ -122,7 +132,7 @@ class JavaSettingsViewModel: ObservableObject {
             }
 
             if lhs.provider != rhs.provider {
-                return lhs.provider == .mojang
+                return providerPriority(lhs.provider, for: lhsMajor) < providerPriority(rhs.provider, for: rhsMajor)
             }
 
             return lhs.version.compare(rhs.version, options: .numeric) == .orderedDescending
@@ -183,6 +193,87 @@ class JavaSettingsViewModel: ObservableObject {
         }
     }
 
+    private func fetchAdoptiumJavaDownloads(forArchitecture architecture: Architecture) async throws -> [JavaDownloadPackage] {
+        try await withThrowingTaskGroup(of: JavaDownloadPackage?.self) { group in
+            for major in Self.supportedJavaMajors {
+                group.addTask {
+                    try await self.fetchAdoptiumJavaDownload(majorVersion: major, architecture: architecture)
+                }
+            }
+
+            var result: [JavaDownloadPackage] = []
+            for try await package in group {
+                if let package {
+                    result.append(package)
+                }
+            }
+            return result
+        }
+    }
+
+    private func fetchAdoptiumJavaDownload(majorVersion: Int, architecture: Architecture) async throws -> JavaDownloadPackage? {
+        let arch = architecture == .arm64 ? "aarch64" : "x64"
+        let latestURL = "\(Self.adoptiumAPIBaseURL)/assets/latest/\(majorVersion)/hotspot"
+        let latestParams: [String: String?] = [
+            "architecture": arch,
+            "os": "mac",
+            "image_type": "jdk",
+            "vendor": "eclipse"
+        ]
+
+        if let release = try await fetchAdoptiumRelease(url: latestURL, params: latestParams) {
+            return makeAdoptiumPackage(from: release, majorVersion: majorVersion, architecture: architecture)
+        }
+
+        let eaURL = "\(Self.adoptiumAPIBaseURL)/assets/feature_releases/\(majorVersion)/ea"
+        let eaParams: [String: String?] = [
+            "architecture": arch,
+            "os": "mac",
+            "image_type": "jdk",
+            "jvm_impl": "hotspot",
+            "vendor": "eclipse",
+            "page_size": "1"
+        ]
+
+        if let release = try await fetchAdoptiumEARelease(url: eaURL, params: eaParams) {
+            return makeAdoptiumPackage(from: release, majorVersion: majorVersion, architecture: architecture)
+        }
+
+        return nil
+    }
+
+    private func fetchAdoptiumRelease(url: String, params: [String: String?]) async throws -> AdoptiumLatestAsset? {
+        let assets: [AdoptiumLatestAsset]
+        do {
+            assets = try await Requests.get(url, params: params).decode([AdoptiumLatestAsset].self)
+        } catch {
+            return nil
+        }
+        return assets.first
+    }
+
+    private func fetchAdoptiumEARelease(url: String, params: [String: String?]) async throws -> AdoptiumFeatureRelease? {
+        let releases: [AdoptiumFeatureRelease]
+        do {
+            releases = try await Requests.get(url, params: params).decode([AdoptiumFeatureRelease].self)
+        } catch {
+            return nil
+        }
+        return releases.first
+    }
+
+    private func makeAdoptiumPackage(from asset: AdoptiumReleaseAssetProviding, majorVersion: Int, architecture: Architecture) -> JavaDownloadPackage? {
+        guard let package = asset.package else { return nil }
+        return JavaDownloadPackage(
+            provider: .adoptiumTemurin,
+            majorVersion: majorVersion,
+            version: asset.versionString,
+            architecture: architecture,
+            releaseTime: asset.updatedAt,
+            payload: .tarGzArchive(url: package.link)
+        )
+    }
+
     private func fetchAzulJavaDownload(majorVersion: Int, architecture: Architecture) async throws -> JavaDownloadPackage? {
         let params: [String: String?] = [
             "java_version": String(majorVersion),
@@ -229,6 +320,22 @@ class JavaSettingsViewModel: ObservableObject {
             merged[package.majorVersion] = package
         }
         return Array(merged.values)
+    }
+
+    private func providerPriority(_ provider: JavaDownloadPackage.Provider, for majorVersion: Int) -> Int {
+        if majorVersion >= 25 {
+            switch provider {
+            case .adoptiumTemurin: return 0
+            case .azulZulu: return 1
+            case .mojang: return 2
+            }
+        }
+
+        switch provider {
+        case .mojang: return 0
+        case .adoptiumTemurin: return 1
+        case .azulZulu: return 2
+        }
     }
 
     private func fetchJavaRuntimeList() async throws -> MojangJavaList {
@@ -281,4 +388,46 @@ class JavaSettingsViewModel: ObservableObject {
         guard !digits.isEmpty else { return nil }
         return Int(digits)
     }
+}
+
+private protocol AdoptiumReleaseAssetProviding {
+    var package: AdoptiumBinaryPackage? { get }
+    var versionString: String { get }
+    var updatedAt: Date { get }
+}
+
+private struct AdoptiumLatestAsset: Decodable, AdoptiumReleaseAssetProviding {
+    let binary: AdoptiumBinary
+    let version: AdoptiumVersionData
+
+    var package: AdoptiumBinaryPackage? { binary.package }
+    var versionString: String { version.semver }
+    var updatedAt: Date { binary.updatedAt }
+}
+
+private struct AdoptiumFeatureRelease: Decodable, AdoptiumReleaseAssetProviding {
+    let binaries: [AdoptiumBinary]
+    let versionData: AdoptiumVersionData
+    let updatedAt: Date
+
+    var package: AdoptiumBinaryPackage? { binaries.first?.package }
+    var versionString: String { versionData.semver }
+}
+
+private struct AdoptiumBinary: Decodable {
+    let package: AdoptiumBinaryPackage
+    let updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case package
+        case updatedAt = "updated_at"
+    }
+}
+
+private struct AdoptiumBinaryPackage: Decodable {
+    let link: URL
+}
+
+private struct AdoptiumVersionData: Decodable {
+    let semver: String
 }

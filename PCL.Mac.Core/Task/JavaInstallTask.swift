@@ -31,6 +31,9 @@ public enum JavaInstallTask {
                 case .zipArchive(let url):
                     model.archiveURL = tempDirectory.appending(path: url.lastPathComponent)
                     model.archiveDownloadURL = url
+                case .tarGzArchive(let url):
+                    model.archiveURL = tempDirectory.appending(path: url.lastPathComponent)
+                    model.archiveDownloadURL = url
                 }
             },
             .init(1, "下载文件") { task, model in
@@ -59,6 +62,13 @@ public enum JavaInstallTask {
                         replaceMethod: .replace,
                         progressHandler: task.setProgress(_:)
                     )
+                case .tarGzArchive(let url):
+                    let archiveURL = try model.archiveURL.unwrap()
+                    try await SingleFileDownloader.download(
+                        .init(url: url, destination: archiveURL, sha1: nil, mirrorKey: "java-runtime.targz.\(download.provider.rawValue).\(download.majorVersion).\(download.architecture.rawValue)"),
+                        replaceMethod: .replace,
+                        progressHandler: task.setProgress(_:)
+                    )
                 }
             },
             .init(2, "__completion", display: false) { _, model in
@@ -80,6 +90,12 @@ public enum JavaInstallTask {
                             throw SimpleError("Java 压缩包解压失败：\(error.localizedDescription)")
                         }
                     }
+                    bundleRoot = try findJavaBundleRoot(in: extractDirectory)
+                case .tarGzArchive:
+                    let archiveURL = try model.archiveURL.unwrap()
+                    let extractDirectory = tempDirectory.appending(path: "archive-extracted")
+                    try FileManager.default.createDirectory(at: extractDirectory, withIntermediateDirectories: true)
+                    try untarGzArchive(archiveURL: archiveURL, destination: extractDirectory)
                     bundleRoot = try findJavaBundleRoot(in: extractDirectory)
                 }
                 try FileManager.default.createDirectory(at: bundleDestination.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -160,6 +176,32 @@ public enum JavaInstallTask {
                 throw SimpleError("系统解压工具执行失败，退出码 \(process.terminationStatus)")
             }
             throw SimpleError("系统解压工具执行失败：\(output)")
+        }
+    }
+
+    private static func untarGzArchive(archiveURL: URL, destination: URL) throws {
+        let process: Process = .init()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        process.arguments = ["-xzf", archiveURL.path, "-C", destination.path]
+
+        let pipe: Pipe = .init()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+        } catch {
+            throw SimpleError("调用 tar 解压工具失败：\(error.localizedDescription)")
+        }
+
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if output.isEmpty {
+                throw SimpleError("tar 解压失败，退出码 \(process.terminationStatus)")
+            }
+            throw SimpleError("tar 解压失败：\(output)")
         }
     }
 }

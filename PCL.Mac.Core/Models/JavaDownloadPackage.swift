@@ -4,11 +4,13 @@ public struct JavaDownloadPackage {
     public enum Provider: String {
         case mojang
         case azulZulu
+        case adoptiumTemurin
     }
 
     public enum Payload {
         case mojangManifest(MojangJavaList.JavaDownload)
         case zipArchive(url: URL)
+        case tarGzArchive(url: URL)
     }
 
     public let provider: Provider
@@ -40,6 +42,8 @@ public struct JavaDownloadPackage {
             return "Mojang Runtime"
         case .azulZulu:
             return "Azul Zulu"
+        case .adoptiumTemurin:
+            return "Adoptium Temurin"
         }
     }
 

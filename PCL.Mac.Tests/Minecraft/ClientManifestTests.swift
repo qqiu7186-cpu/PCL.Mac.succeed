@@ -62,7 +62,7 @@ struct ClientManifestTests {
     @Test func supportedJavaMajorRangeRespectsLoaderVersionBoundaries() {
         let manifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.2","javaVersion":{"component":"jre-legacy","majorVersion":8},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
 
-        let forgeLegacyLine = manifest.supportedJavaMajorRange(for: .init("1.20.2"), modLoader: .forge, modLoaderVersion: "49.0.38")
+        let forgeLegacyLine = manifest.supportedJavaMajorRange(for: .init("1.20.2"), modLoader: .forge, modLoaderVersion: "20.6.90")
         #expect(forgeLegacyLine.lowerBound == 17)
         #expect(forgeLegacyLine.upperBound == 17)
 

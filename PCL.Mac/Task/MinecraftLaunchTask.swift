@@ -145,8 +145,6 @@ public enum MinecraftLaunchTask {
             if health.isHealthy {
                 return "• Java \(runtime.version)（\(path)）可用"
             }
-
-            markRuntimeUnhealthy(runtime)
             return "• Java \(runtime.version)（\(path)）预检失败：\(health.reason)"
         }
 
@@ -352,10 +350,20 @@ public enum MinecraftLaunchTask {
             return score
         }
 
-        let candidates = JavaManager.shared.javaRuntimes
+        let allRuntimes: [JavaRuntime]
+        do {
+            allRuntimes = try JavaManager.shared.allJavaRuntimes()
+        } catch {
+            err("读取 Java 运行时列表失败：\(error.localizedDescription)")
+            allRuntimes = JavaManager.shared.javaRuntimes
+        }
+
+        let matchingRuntimes = allRuntimes
             .filter { $0.majorVersion >= minVersion }
             .filter { javaRange.contains($0.majorVersion) }
             .filter { !normalizedExcluding.contains(normalizedRuntimePath($0)) }
+
+        let candidates = matchingRuntimes
             .filter { !isRuntimeMarkedUnhealthy($0) }
             .sorted { score(of: $0) > score(of: $1) }
 
@@ -364,6 +372,19 @@ public enum MinecraftLaunchTask {
             if health.isHealthy { return runtime }
             markRuntimeUnhealthy(runtime)
             warn("Java 预检失败：\(runtime.executableURL.path) - \(health.reason)")
+        }
+
+        let markedCandidates = matchingRuntimes
+            .filter { isRuntimeMarkedUnhealthy($0) }
+            .sorted { score(of: $0) > score(of: $1) }
+
+        for runtime in markedCandidates {
+            let health = checkRuntimeHealth(runtime)
+            if health.isHealthy {
+                JavaManager.shared.clearBrokenRuntime(runtime)
+                log("已恢复此前标记不可用的 Java：\(runtime.executableURL.path)")
+                return runtime
+            }
         }
         return nil
     }

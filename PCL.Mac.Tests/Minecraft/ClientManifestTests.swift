@@ -18,4 +18,100 @@ struct ClientManifestTests {
         #expect(manifest.type == "release")
         #expect(manifest.downloads.client.size == 20259661)
     }
+
+    @Test func requiredJavaMajorVersionUsesHeuristicsAndManifest() {
+        let legacyManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.7.10","javaVersion":{"component":"jre-legacy","majorVersion":8},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        #expect(legacyManifest.requiredJavaMajorVersion(for: .init("1.7.10")) == 8)
+
+        let manifest117 = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.17","javaVersion":{"component":"java-runtime-beta","majorVersion":16},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        #expect(manifest117.requiredJavaMajorVersion(for: .init("1.17")) == 16)
+
+        let futureManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"26.1","javaVersion":{"component":"java-runtime-zeta","majorVersion":26},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        #expect(futureManifest.requiredJavaMajorVersion(for: .init("26.1")) == 26)
+    }
+
+    @Test func supportedJavaMajorRangeIncludesUpperBoundHeuristic() {
+        let veryOldManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.5.2","javaVersion":{"component":"jre-legacy","majorVersion":8},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        let oldRange = veryOldManifest.supportedJavaMajorRange(for: .init("1.5.2"))
+        #expect(oldRange.lowerBound == 8)
+        #expect(oldRange.upperBound == 8)
+
+        let modernManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.6","javaVersion":{"component":"java-runtime-gamma","majorVersion":21},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        let modernRange = modernManifest.supportedJavaMajorRange(for: .init("1.20.6"))
+        #expect(modernRange.lowerBound == 21)
+        #expect(modernRange.upperBound == 26)
+    }
+
+    @Test func supportedJavaMajorRangeRespectsModLoaderHeuristics() {
+        let forgeManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.16.5","javaVersion":{"component":"jre-legacy","majorVersion":8},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        let forgeRange = forgeManifest.supportedJavaMajorRange(for: .init("1.16.5"), modLoader: .forge)
+        #expect(forgeRange.lowerBound == 8)
+        #expect(forgeRange.upperBound == 8)
+
+        let fabricManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.16.5","javaVersion":{"component":"jre-legacy","majorVersion":8},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        let fabricRange = fabricManifest.supportedJavaMajorRange(for: .init("1.16.5"), modLoader: .fabric)
+        #expect(fabricRange.lowerBound == 8)
+        #expect(fabricRange.upperBound == 17)
+
+        let modernNeoForgeManifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.6","javaVersion":{"component":"java-runtime-gamma","majorVersion":21},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+        let neoForgeRange = modernNeoForgeManifest.supportedJavaMajorRange(for: .init("1.20.6"), modLoader: .neoforge)
+        #expect(neoForgeRange.lowerBound == 21)
+        #expect(neoForgeRange.upperBound == 21)
+    }
+
+    @Test func supportedJavaMajorRangeRespectsLoaderVersionBoundaries() {
+        let manifest = try! JSONDecoder.shared.decode(ClientManifest.self, from: Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.2","javaVersion":{"component":"jre-legacy","majorVersion":8},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#.utf8))
+
+        let forgeLegacyLine = manifest.supportedJavaMajorRange(for: .init("1.20.2"), modLoader: .forge, modLoaderVersion: "49.0.38")
+        #expect(forgeLegacyLine.lowerBound == 17)
+        #expect(forgeLegacyLine.upperBound == 17)
+
+        let forgeModernLine = manifest.supportedJavaMajorRange(for: .init("1.20.2"), modLoader: .forge, modLoaderVersion: "50.1.0")
+        #expect(forgeModernLine.lowerBound == 17)
+        #expect(forgeModernLine.upperBound == 26)
+
+        let neoForgeLegacyLine = manifest.supportedJavaMajorRange(for: .init("1.20.5"), modLoader: .neoforge, modLoaderVersion: "20.6.90")
+        #expect(neoForgeLegacyLine.lowerBound == 21)
+        #expect(neoForgeLegacyLine.upperBound == 21)
+
+        let neoForgeModernLine = manifest.supportedJavaMajorRange(for: .init("1.20.5"), modLoader: .neoforge, modLoaderVersion: "21.0.10")
+        #expect(neoForgeModernLine.lowerBound == 21)
+        #expect(neoForgeModernLine.upperBound == 26)
+
+        let forgePrefixedVersion = manifest.supportedJavaMajorRange(for: .init("1.20.2"), modLoader: .forge, modLoaderVersion: "1.20.2-50.1.0")
+        #expect(forgePrefixedVersion.lowerBound == 17)
+        #expect(forgePrefixedVersion.upperBound == 26)
+
+        let forgeUnknownVersion = manifest.supportedJavaMajorRange(for: .init("1.20.4"), modLoader: .forge, modLoaderVersion: nil)
+        #expect(forgeUnknownVersion.lowerBound == 17)
+        #expect(forgeUnknownVersion.upperBound == 17)
+
+        let neoForgeUnknownVersion = manifest.supportedJavaMajorRange(for: .init("1.20.4"), modLoader: .neoforge, modLoaderVersion: nil)
+        #expect(neoForgeUnknownVersion.lowerBound == 17)
+        #expect(neoForgeUnknownVersion.upperBound == 17)
+    }
+
+    @Test func detectModLoaderAndVersionFromLibraries() throws {
+        let temp = FileManager.default.temporaryDirectory.appending(path: "client-manifest-tests-\(UUID().uuidString.lowercased())")
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let forgeURL = temp.appending(path: "forge.json")
+        try Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.1-forge","javaVersion":{"component":"java-runtime-gamma","majorVersion":17},"libraries":[{"name":"net.minecraftforge:forge:1.20.1-47.3.0","downloads":{"artifact":{"path":"a.jar"}}}],"mainClass":"net.minecraftforge.bootstrap.ForgeBootstrap","type":"release"}"#.utf8).write(to: forgeURL)
+        let forgeDetected = try ClientManifest.load(at: forgeURL)
+        #expect(forgeDetected.1 == .forge)
+        #expect(forgeDetected.2 == "1.20.1-47.3.0")
+
+        let neoForgeURL = temp.appending(path: "neoforge.json")
+        try Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.4-neoforge","javaVersion":{"component":"java-runtime-gamma","majorVersion":21},"libraries":[{"name":"net.neoforged:neoforge:20.4.265","downloads":{"artifact":{"path":"b.jar"}}}],"mainClass":"net.neoforged.neoforge.client.main.NeoForgeClient","type":"release"}"#.utf8).write(to: neoForgeURL)
+        let neoForgeDetected = try ClientManifest.load(at: neoForgeURL)
+        #expect(neoForgeDetected.1 == .neoforge)
+        #expect(neoForgeDetected.2 == "20.4.265")
+
+        let fabricURL = temp.appending(path: "fabric.json")
+        try Data(#"{"arguments":{"game":[],"jvm":[]},"id":"1.20.4-fabric","javaVersion":{"component":"java-runtime-gamma","majorVersion":21},"libraries":[{"name":"net.fabricmc:fabric-loader:0.16.10","downloads":{"artifact":{"path":"c.jar"}}}],"mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient","type":"release"}"#.utf8).write(to: fabricURL)
+        let fabricDetected = try ClientManifest.load(at: fabricURL)
+        #expect(fabricDetected.1 == .fabric)
+        #expect(fabricDetected.2 == "0.16.10")
+    }
 }

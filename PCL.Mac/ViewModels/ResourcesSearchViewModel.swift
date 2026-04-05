@@ -12,6 +12,7 @@ class ResourcesSearchViewModel: ObservableObject {
     @Published public var searchResults: [ProjectListItemModel]?
     @Published public var query: String = ""
     public let type: ModrinthProjectType
+    public let requiredCategories: [String]
     public let loadingVM: MyLoadingViewModel = .init(text: "加载中")
     private var lastSearchResponse: ModrinthAPIClient.SearchResponse?
     
@@ -20,8 +21,9 @@ class ResourcesSearchViewModel: ObservableObject {
         return Int(ceil(Double(lastSearchResponse.totalHits) / Double(lastSearchResponse.limit)))
     }
     
-    public init(type: ModrinthProjectType) {
+    public init(type: ModrinthProjectType, requiredCategories: [String] = []) {
         self.type = type
+        self.requiredCategories = requiredCategories
     }
     
     public func search(_ query: String, pageIndex: Int = 0) async throws {
@@ -30,7 +32,13 @@ class ResourcesSearchViewModel: ObservableObject {
             loadingVM.reset()
             searchResults = nil
         }
-        let response: ModrinthAPIClient.SearchResponse = try await ModrinthAPIClient.shared.search(type: type, query, forVersion: nil, pageIndex: pageIndex)
+        let response: ModrinthAPIClient.SearchResponse = try await ModrinthAPIClient.shared.search(
+            type: type,
+            query,
+            forVersion: nil,
+            requiredCategories: requiredCategories,
+            pageIndex: pageIndex
+        )
         await MainActor.run {
             lastSearchResponse = response
             searchResults = response.hits.filter { $0.clientCompatibility != .unsupported }.map(ProjectListItemModel.init(_:))

@@ -28,12 +28,16 @@ public class ModrinthAPIClient {
         type: ModrinthProjectType,
         _ query: String?,
         forVersion gameVersion: String?,
+        requiredCategories: [String] = [],
         pageIndex: Int = 0,
         limit: Int = 40
     ) async throws -> SearchResponse {
         var facets: [[String]] = [["project_type:\(type)"]]
         if let gameVersion {
             facets.append(["versions:\(gameVersion)"])
+        }
+        for category in requiredCategories {
+            facets.append(["categories:\(category)"])
         }
         let facetsString: String = String(data: try JSONSerialization.data(withJSONObject: facets), encoding: .utf8)!
         

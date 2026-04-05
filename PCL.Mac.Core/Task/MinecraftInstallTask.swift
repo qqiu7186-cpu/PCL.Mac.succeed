@@ -102,17 +102,30 @@ public enum MinecraftInstallTask {
                 )
             },
             .init(8, "__completion", display: false) { _, _ in
-                let instance: MinecraftInstance = .init(
+                let installedInstance: MinecraftInstance = .init(
                     runningDirectory: repository.versionsURL.appending(path: name),
                     version: version,
                     manifest: model.manifest,
                     config: .init(),
-                    modLoader: modLoader?.type
+                    modLoader: model.detectedModLoader ?? modLoader?.type,
+                    modLoaderVersion: model.detectedModLoaderVersion ?? modLoader?.version
                 )
-                repository.instances?.append(instance)
                 try? FileManager.default.removeItem(at: model.runningDirectory.appending(path: ".incomplete"))
+
+                do {
+                    try repository.load()
+                } catch {
+                    err("安装完成后刷新实例列表失败：\(error.localizedDescription)")
+                }
+
+                let instanceForCallback: MinecraftInstance
+                if let loaded = try? repository.instance(id: name) {
+                    instanceForCallback = loaded
+                } else {
+                    instanceForCallback = installedInstance
+                }
                 await MainActor.run {
-                    completion?(instance)
+                    completion?(instanceForCallback)
                 }
             }
         ]
@@ -146,7 +159,10 @@ public enum MinecraftInstallTask {
                 subTasks.insert(
                     .init(4, "执行 Forge 安装器") { task, model in
                         try await model.forgeInstallService!.executeProcessors(progressHandler: task.setProgress(_:))
-                        model.manifest = try .load(at: model.runningDirectory.appending(path: "\(model.name).json")).0
+                        let loaded: (ClientManifest, ModLoader?, String?) = try ClientManifest.load(at: model.runningDirectory.appending(path: "\(model.name).json"))
+                        model.manifest = loaded.0
+                        model.detectedModLoader = loaded.1
+                        model.detectedModLoaderVersion = loaded.2
                     },
                     at: 5
                 )
@@ -162,7 +178,10 @@ public enum MinecraftInstallTask {
                 subTasks.insert(
                     .init(4, "执行 NeoForge 安装器") { task, model in
                         try await model.forgeInstallService!.executeProcessors(progressHandler: task.setProgress(_:))
-                        model.manifest = try .load(at: model.runningDirectory.appending(path: "\(model.name).json")).0
+                        let loaded: (ClientManifest, ModLoader?, String?) = try ClientManifest.load(at: model.runningDirectory.appending(path: "\(model.name).json"))
+                        model.manifest = loaded.0
+                        model.detectedModLoader = loaded.1
+                        model.detectedModLoaderVersion = loaded.2
                     },
                     at: 5
                 )
@@ -349,6 +368,8 @@ public enum MinecraftInstallTask {
         public var manifest: ClientManifest!
         public var mappedManifest: ClientManifest!
         public var assetIndex: AssetIndex!
+        public var detectedModLoader: ModLoader?
+        public var detectedModLoaderVersion: String?
         
         public var forgeInstallService: ForgeInstallService?
         

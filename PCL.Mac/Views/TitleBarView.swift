@@ -84,7 +84,9 @@ private struct PageButton: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    if router.getRoot() != route {
+                    if route == .download {
+                        router.setRoot(.download)
+                    } else if router.getRoot() != route {
                         router.setRoot(route)
                     }
                 }

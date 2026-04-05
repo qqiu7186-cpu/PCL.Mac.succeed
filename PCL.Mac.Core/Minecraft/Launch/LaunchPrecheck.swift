@@ -21,11 +21,19 @@ public enum LaunchPrecheck {
     
     private static func checkJava(instance: MinecraftInstance, currentJava: JavaRuntime) -> [Entry] {
         var entries: [Entry] = []
-        let minVersion: Int = instance.manifest.javaVersion.majorVersion
+        let minVersion: Int = instance.manifest.requiredJavaMajorVersion(for: instance.version)
+        let javaRange = instance.manifest.supportedJavaMajorRange(
+            for: instance.version,
+            modLoader: instance.modLoader,
+            modLoaderVersion: instance.modLoaderVersion
+        )
         let actualVersion: Int = currentJava.majorVersion
         if actualVersion < minVersion {
             log("当前 Java 版本（\(actualVersion)）低于最低 Java 版本（\(minVersion)）")
             entries.append(.javaVersionTooLow(min: minVersion))
+        } else if !javaRange.contains(actualVersion) {
+            log("当前 Java 版本（\(actualVersion)）不在支持范围（\(javaRange.lowerBound)-\(javaRange.upperBound)）")
+            entries.append(.javaVersionOutOfRange(min: javaRange.lowerBound, max: javaRange.upperBound))
         }
         if Architecture.systemArchitecture() == .arm64 && currentJava.architecture == .arm64 && instance.version <= .init("1.7.2") {
             log("不支持当前 Java 架构")
@@ -44,6 +52,7 @@ public enum LaunchPrecheck {
     
     public enum Entry {
         case javaVersionTooLow(min: Int)
+        case javaVersionOutOfRange(min: Int, max: Int)
         case armNotSupported
         case noMicrosoftAccount
     }

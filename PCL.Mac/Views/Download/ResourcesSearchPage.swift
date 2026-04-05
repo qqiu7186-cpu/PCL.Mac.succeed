@@ -15,6 +15,10 @@ struct ResourcesSearchPage: View {
     init(type: ModrinthProjectType) {
         self._viewModel = StateObject(wrappedValue: .init(type: type))
     }
+
+    init(type: ModrinthProjectType, requiredCategories: [String]) {
+        self._viewModel = StateObject(wrappedValue: .init(type: type, requiredCategories: requiredCategories))
+    }
     
     var body: some View {
         CardContainer {
@@ -84,6 +88,8 @@ struct ResourcesSearchPage: View {
 }
 
 struct ProjectListItemView: View {
+    @StateObject private var favoritesStore: FavoriteProjectsStore = .shared
+    @State private var isHovered: Bool = false
     private let project: ProjectListItemModel
     
     init(project: ProjectListItemModel) {
@@ -124,9 +130,25 @@ struct ProjectListItemView: View {
                     
                     Spacer(minLength: 0)
                 }
+                Button {
+                    favoritesStore.toggle(project.id, name: project.title)
+                } label: {
+                    Group {
+                        if favoritesStore.contains(project.id) {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(Color.yellow)
+                        } else if isHovered {
+                            Image(systemName: "star")
+                                .foregroundStyle(Color.colorGray3)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
                 Spacer(minLength: 0)
             }
         }
+        .onHover { isHovered = $0 }
     }
     
     private struct InformationView: View {

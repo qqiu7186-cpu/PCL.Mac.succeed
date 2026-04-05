@@ -44,13 +44,20 @@ public class MultiFileDownloader {
         let dedupedItems: [DownloadItem] = Array(Set(items))
         let total: Int = dedupedItems.count
         let skipped: Int = self.items.count - dedupedItems.count
+        if self.items.isEmpty || total == 0 {
+            if let progressHandler {
+                await progressHandler(1)
+            }
+            return
+        }
         var tickerTask: Task<Void, Error>? = nil
         if let progressHandler {
             tickerTask = Task {
                 while true {
                     try await Task.sleep(nanoseconds: 100_000_000) // 0.1s
                     await MainActor.run {
-                        progressHandler((Array(progress.values).reduce(0, +) + Double(skipped)) / Double(self.items.count))
+                        let currentProgress = (Array(progress.values).reduce(0, +) + Double(skipped)) / Double(self.items.count)
+                        progressHandler(currentProgress)
                     }
                 }
             }
@@ -84,6 +91,11 @@ public class MultiFileDownloader {
         let uuid: UUID = .init()
         await MainActor.run {
             progress[uuid] = 0
+        }
+        defer {
+            Task { @MainActor in
+                progress.removeValue(forKey: uuid)
+            }
         }
         try await SingleFileDownloader.download(item, replaceMethod: replaceMethod) { progress in
             self.progress[uuid] = progress

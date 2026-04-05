@@ -38,42 +38,119 @@ public enum MinecraftLaunchTask {
     
     private static func checkJava(task: SubTask, model: Model) async throws {
         var runtime: JavaRuntime?
+        let minVersion: Int = model.instance.manifest.requiredJavaMajorVersion(for: model.instance.version)
         
-        if let javaRuntime = model.instance.javaRuntime() {
-            runtime = javaRuntime
-        } else {
-            if let javaRuntime: JavaRuntime = model.instance.searchJava() {
-                if await MessageBoxManager.shared.showTextAsync(
-                    title: "未设置 Java",
-                    content: "你还没有设置这个实例使用的 Java！\nPCL.Mac 找到了一个可用的 Java：\(javaRuntime.version)，是否切换并继续启动？",
-                    level: .info,
-                    .no(),
-                    .yes(label: "切换", type: .highlight)
-                ) == 1 {
-                    model.instance.setJava(url: javaRuntime.executableURL)
-                    runtime = javaRuntime
-                } else {
-                    try task.cancel()
-                }
-            } else {
-                if await MessageBoxManager.shared.showTextAsync(
-                    title: "没有可用的 Java",
-                    content: "这个实例需要 Java \(model.instance.manifest.javaVersion.majorVersion) 才能启动，但你的电脑上没有安装。\n点击下方按钮可以跳转到安装页面！",
-                    level: .error,
-                    .no(),
-                    .yes(label: "去安装")
-                ) == 1 {
-                    await AppRouter.shared.setRoot(.settings)
-                    await AppRouter.shared.append(.javaSettings)
-                }
+        if let resolvedRuntime: JavaRuntime = model.instance.resolveJavaForLaunch() {
+            runtime = resolvedRuntime
+        } else if model.instance.config.autoSelectJava {
+            runtime = await autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance)
+            if runtime == nil {
+                await showNoUsableJavaPrompt(minVersion: minVersion, diagnostics: noUsableJavaDiagnostics(for: model.instance, minVersion: minVersion))
                 try task.cancel()
             }
+        } else if let javaRuntime: JavaRuntime = bestHealthyRuntime(for: model.instance, minVersion: minVersion) {
+            if await MessageBoxManager.shared.showTextAsync(
+                title: "当前 Java 不可用",
+                content: "手动模式下未设置可用 Java。\nPCL.Mac 找到了一个可用的 Java：\(javaRuntime.version)，是否切换并继续启动？",
+                level: .info,
+                .no(),
+                .yes(label: "切换", type: .highlight)
+            ) == 1 {
+                model.instance.setJava(url: javaRuntime.executableURL)
+                runtime = javaRuntime
+            } else {
+                try task.cancel()
+            }
+        } else if let autoInstalled = await autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance) {
+            runtime = autoInstalled
+        } else {
+            await showNoUsableJavaPrompt(minVersion: minVersion, diagnostics: noUsableJavaDiagnostics(for: model.instance, minVersion: minVersion))
+            try task.cancel()
         }
-        
+
+        if let selectedRuntime = runtime {
+            let health: RuntimeHealth = checkRuntimeHealth(selectedRuntime)
+            if !health.isHealthy {
+                markRuntimeUnhealthy(selectedRuntime)
+                warn("Java 预检失败：\(selectedRuntime.executableURL.path) - \(health.reason)")
+                if let fallback = bestHealthyRuntime(for: model.instance, minVersion: minVersion, excluding: [normalizedRuntimePath(selectedRuntime)]) {
+                    runtime = fallback
+                    model.instance.setJava(url: fallback.executableURL)
+                    hint("检测到当前 Java 运行时异常，已自动切换到 \(fallback.version)。", type: .critical)
+                } else if let autoInstalled = await autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance, excluding: [normalizedRuntimePath(selectedRuntime)]) {
+                    runtime = autoInstalled
+                    model.instance.setJava(url: autoInstalled.executableURL)
+                    hint("检测到当前 Java 运行时异常，已自动下载并切换到 \(autoInstalled.version)。", type: .critical)
+                } else {
+                    _ = await MessageBoxManager.shared.showTextAsync(
+                        title: "Java 运行时异常",
+                        content: "当前 Java 在启动前自检中失败（\(health.reason)），且未找到可用替代运行时。\n请在设置中更换 Java 后重试。",
+                        level: .error
+                    )
+                    try task.cancel()
+                }
+            }
+        }
+
         if let runtime {
             model.options.javaRuntime = runtime
             model.manifest = NativesMapper.map(model.manifest, to: runtime.architecture)
         }
+    }
+
+    private static func showNoUsableJavaPrompt(minVersion: Int, diagnostics: String? = nil) async {
+        var content = "这个实例需要 Java \(minVersion) 才能启动，但你的电脑上没有安装可用版本，且自动下载失败。\n"
+        if let diagnostics, !diagnostics.isEmpty {
+            content += "\n\(diagnostics)\n"
+        }
+        content += "\n点击下方按钮可以跳转到安装页面！"
+
+        if await MessageBoxManager.shared.showTextAsync(
+            title: "没有可用的 Java",
+            content: content,
+            level: .error,
+            .no(),
+            .yes(label: "去安装")
+        ) == 1 {
+            await AppRouter.shared.setRoot(.settings)
+            await AppRouter.shared.append(.javaSettings)
+        }
+    }
+
+    private static func noUsableJavaDiagnostics(for instance: MinecraftInstance, minVersion: Int) -> String? {
+        let allRuntimes: [JavaRuntime]
+        do {
+            allRuntimes = try JavaManager.shared.allJavaRuntimes()
+        } catch {
+            err("读取 Java 运行时列表失败：\(error.localizedDescription)")
+            return nil
+        }
+
+        let candidates = allRuntimes
+            .filter { $0.majorVersion >= minVersion }
+            .sorted { lhs, rhs in
+                if lhs.majorVersion != rhs.majorVersion { return lhs.majorVersion > rhs.majorVersion }
+                return lhs.version.compare(rhs.version, options: .numeric) == .orderedDescending
+            }
+
+        guard !candidates.isEmpty else { return nil }
+
+        let lines: [String] = candidates.prefix(3).map { runtime in
+            let path = runtime.executableURL.path
+            if isRuntimeMarkedUnhealthy(runtime) {
+                return "• Java \(runtime.version)（\(path)）已标记为不可用（此前预检失败）"
+            }
+
+            let health = checkRuntimeHealth(runtime)
+            if health.isHealthy {
+                return "• Java \(runtime.version)（\(path)）可用"
+            }
+
+            markRuntimeUnhealthy(runtime)
+            return "• Java \(runtime.version)（\(path)）预检失败：\(health.reason)"
+        }
+
+        return "已检测到 Java，但运行时不可用：\n\(lines.joined(separator: "\n"))"
     }
     
     private static func refreshAccount(task: SubTask, model: Model) async throws {
@@ -109,6 +186,13 @@ public enum MinecraftLaunchTask {
                 _ = await MessageBoxManager.shared.showTextAsync(
                     title: "Java 版本过低",
                     content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本需要 \(min)！",
+                    level: .error
+                )
+                try task.cancel()
+            case .javaVersionOutOfRange(let min, let max):
+                _ = await MessageBoxManager.shared.showTextAsync(
+                    title: "Java 版本不兼容",
+                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本只支持 Java \(min)-\(max)。",
                     level: .error
                 )
                 try task.cancel()
@@ -249,6 +333,215 @@ public enum MinecraftLaunchTask {
             }
         }
         return false
+    }
+
+    private static func bestHealthyRuntime(for instance: MinecraftInstance, minVersion: Int, excluding: Set<String> = []) -> JavaRuntime? {
+        let normalizedExcluding: Set<String> = Set(excluding.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
+        let javaRange = instance.manifest.supportedJavaMajorRange(
+            for: instance.version,
+            modLoader: instance.modLoader,
+            modLoaderVersion: instance.modLoaderVersion
+        )
+
+        func score(of runtime: JavaRuntime) -> Int {
+            var score = 0
+            if runtime.architecture == (instance.version > .init("1.7.2") ? .systemArchitecture() : .x64) { score += 3 }
+            if runtime.majorVersion == minVersion { score += 2 }
+            if runtime.type == .jdk { score += 1 }
+            if runtime.implementor?.contains("Azul") == true { score += 1 }
+            return score
+        }
+
+        let candidates = JavaManager.shared.javaRuntimes
+            .filter { $0.majorVersion >= minVersion }
+            .filter { javaRange.contains($0.majorVersion) }
+            .filter { !normalizedExcluding.contains(normalizedRuntimePath($0)) }
+            .filter { !isRuntimeMarkedUnhealthy($0) }
+            .sorted { score(of: $0) > score(of: $1) }
+
+        for runtime in candidates {
+            let health = checkRuntimeHealth(runtime)
+            if health.isHealthy { return runtime }
+            markRuntimeUnhealthy(runtime)
+            warn("Java 预检失败：\(runtime.executableURL.path) - \(health.reason)")
+        }
+        return nil
+    }
+
+    private static func autoInstallJavaIfNeeded(minVersion: Int, instance: MinecraftInstance, excluding: Set<String> = []) async -> JavaRuntime? {
+        let javaRange = instance.manifest.supportedJavaMajorRange(
+            for: instance.version,
+            modLoader: instance.modLoader,
+            modLoaderVersion: instance.modLoaderVersion
+        )
+        guard let download = await preferredJavaDownload(minVersion: minVersion, maxVersion: javaRange.upperBound) else {
+            return nil
+        }
+
+        do {
+            log("未找到可用 Java，开始自动安装 \(download.version)")
+            try await JavaInstallTask.create(download: download, replaceExisting: true).start()
+        } catch {
+            err("自动安装 Java 失败：\(error.localizedDescription)")
+            return nil
+        }
+
+        return bestHealthyRuntime(for: instance, minVersion: minVersion, excluding: excluding)
+    }
+
+    private static func preferredJavaDownload(minVersion: Int, maxVersion: Int) async -> JavaDownloadPackage? {
+        do {
+            let downloads: [JavaDownloadPackage] = try await JavaSettingsViewModel().javaDownloads()
+            let rangedDownloads = downloads.filter { $0.majorVersion >= minVersion && $0.majorVersion <= maxVersion }
+            guard !rangedDownloads.isEmpty else {
+                return nil
+            }
+
+            let parsed = rangedDownloads.map { (download: $0, major: $0.majorVersion, isPrerelease: isPrereleaseJavaVersion($0.version)) }
+
+            if let exact = parsed
+                .filter({ $0.major == minVersion })
+                .sorted(by: { lhs, rhs in
+                    if lhs.isPrerelease != rhs.isPrerelease { return rhs.isPrerelease }
+                    return lhs.download.version.compare(rhs.download.version, options: .numeric) == .orderedDescending
+                })
+                .first {
+                return exact.download
+            }
+
+            if let higher = parsed
+                .filter({ $0.major > minVersion })
+                .sorted(by: { lhs, rhs in
+                    if lhs.major != rhs.major { return lhs.major < rhs.major }
+                    if lhs.isPrerelease != rhs.isPrerelease { return rhs.isPrerelease }
+                    return lhs.download.version.compare(rhs.download.version, options: .numeric) == .orderedDescending
+                })
+                .first {
+                return higher.download
+            }
+
+            return rangedDownloads.first
+        } catch {
+            err("拉取 Java 下载列表失败：\(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static func isPrereleaseJavaVersion(_ version: String) -> Bool {
+        let lowered = version.lowercased()
+        return lowered.contains("ea") || lowered.contains("beta") || lowered.contains("preview") || lowered.contains("rc")
+    }
+
+    private static func javaMajorVersion(of version: String) -> Int {
+        let parts = version.split(separator: ".")
+        guard let first = parts.first else { return 0 }
+        if first == "1", parts.count > 1 {
+            return leadingNumber(in: String(parts[1])) ?? 0
+        }
+        return leadingNumber(in: String(first)) ?? 0
+    }
+
+    private static func leadingNumber(in value: String) -> Int? {
+        let digits = value.prefix { $0.isNumber }
+        guard !digits.isEmpty else { return nil }
+        return Int(digits)
+    }
+
+    private static func checkRuntimeHealth(_ runtime: JavaRuntime) -> RuntimeHealth {
+        let process: Process = .init()
+        process.executableURL = runtime.executableURL
+        process.arguments = probeArguments(for: runtime)
+
+        let pipe: Pipe = .init()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+        } catch {
+            return .init(isHealthy: false, reason: "无法执行：\(error.localizedDescription)")
+        }
+
+        let start = Date()
+        while process.isRunning {
+            if Date().timeIntervalSince(start) > 8 {
+                process.terminate()
+                return .init(isHealthy: false, reason: "预检超时")
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: outputData, as: UTF8.self).lowercased()
+
+        if process.terminationReason == .uncaughtSignal {
+            return .init(isHealthy: false, reason: "收到信号退出")
+        }
+        if process.terminationStatus != 0 {
+            return .init(isHealthy: false, reason: "退出码 \(process.terminationStatus)")
+        }
+        if output.contains("fatal error has been detected by the java runtime environment") {
+            return .init(isHealthy: false, reason: "JVM 自身致命错误")
+        }
+
+        return .init(isHealthy: true, reason: "OK")
+    }
+
+    private static func probeArguments(for runtime: JavaRuntime) -> [String] {
+        var arguments: [String] = [
+            "-Xms512M",
+            "-Xmx1024M"
+        ]
+
+        if isOpenJ9(runtime) {
+            arguments.append(contentsOf: [
+                "-Xgcpolicy:gencon",
+                "-Xsoftmx768M"
+            ])
+        } else {
+            arguments.append(contentsOf: [
+                "-XX:+UseG1GC",
+                "-XX:MaxGCPauseMillis=20",
+                "-XX:+ParallelRefProcEnabled",
+                "-XX:MinHeapFreeRatio=10",
+                "-XX:MaxHeapFreeRatio=30"
+            ])
+            if runtime.majorVersion >= 12 {
+                arguments.append(contentsOf: [
+                    "-XX:G1PeriodicGCInterval=30000",
+                    "-XX:+G1PeriodicGCInvokesConcurrent"
+                ])
+            }
+        }
+
+        arguments.append("-version")
+        return arguments
+    }
+
+    private static func isRuntimeMarkedUnhealthy(_ runtime: JavaRuntime) -> Bool {
+        JavaManager.shared.isBrokenRuntime(runtime)
+    }
+
+    private static func markRuntimeUnhealthy(_ runtime: JavaRuntime) {
+        JavaManager.shared.markRuntimeAsBroken(runtime)
+    }
+
+    private static func normalizedRuntimePath(_ runtime: JavaRuntime) -> String {
+        runtime.executableURL.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func isOpenJ9(_ runtime: JavaRuntime) -> Bool {
+        if let implementor = runtime.implementor?.lowercased() {
+            if implementor.contains("ibm") || implementor.contains("semeru") || implementor.contains("openj9") {
+                return true
+            }
+        }
+        return runtime.executableURL.path == "/usr/bin/java"
+    }
+
+    private struct RuntimeHealth {
+        let isHealthy: Bool
+        let reason: String
     }
     
     public class Model: TaskModel {

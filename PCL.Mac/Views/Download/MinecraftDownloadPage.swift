@@ -76,12 +76,6 @@ struct MinecraftDownloadPage: View {
 
 private struct VersionView: View {
     @EnvironmentObject private var viewModel: InstanceManager
-    
-    private static let dateFormatter: DateFormatter = {
-        let formatter: DateFormatter = .init()
-        formatter.dateFormat = "yyyy/MM/dd HH:mm"
-        return formatter
-    }()
     private let version: VersionManifest.Version
     private let description: String
     

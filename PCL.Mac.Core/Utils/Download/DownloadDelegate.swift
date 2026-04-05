@@ -29,6 +29,7 @@ class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     }
     
     private var contexts: [Int: DownloadContext] = [:]
+    private let contextsLock: NSLock = .init()
     
     public func register(
         task: URLSessionDownloadTask,
@@ -37,9 +38,9 @@ class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         progressHandler: (@MainActor (Double) -> Void)?
     ) {
         let context: DownloadContext = .init(destination: destination, continuation: continuation, progressHandler: progressHandler)
-        Self.queue.addOperation {
-            self.contexts[task.taskIdentifier] = context
-        }
+        contextsLock.lock()
+        contexts[task.taskIdentifier] = context
+        contextsLock.unlock()
     }
     
     func urlSession(
@@ -47,7 +48,7 @@ class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let context: DownloadContext = contexts[downloadTask.taskIdentifier] else {
+        guard let context: DownloadContext = context(for: downloadTask.taskIdentifier) else {
             return
         }
         
@@ -93,19 +94,28 @@ class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     }
     
     private func resume(task: URLSessionTask, with value: Result<Void, Error>) {
-        if let context = contexts[task.taskIdentifier] {
+        contextsLock.lock()
+        let context = contexts[task.taskIdentifier]
+        contexts.removeValue(forKey: task.taskIdentifier)
+        contextsLock.unlock()
+        if let context {
             context.continuation?.resume(with: value)
             context.continuation = nil
-            contexts.removeValue(forKey: task.taskIdentifier)
         }
     }
     
     private func updateProgress(for task: URLSessionTask, with progress: Double) {
-        if let context = contexts[task.taskIdentifier], let progressHandler = context.progressHandler {
+        if let context = context(for: task.taskIdentifier), let progressHandler = context.progressHandler {
             DispatchQueue.main.async {
                 progressHandler(progress)
             }
         }
+    }
+
+    private func context(for identifier: Int) -> DownloadContext? {
+        contextsLock.lock()
+        defer { contextsLock.unlock() }
+        return contexts[identifier]
     }
     
     private override init() {

@@ -15,6 +15,7 @@ public class MinecraftInstance: Equatable {
     public let manifest: ClientManifest
     public let config: Config
     public let modLoader: ModLoader?
+    public let modLoaderVersion: String?
     
     public var name: String { runningDirectory.lastPathComponent }
     public var manifestURL: URL { runningDirectory.appending(path: "\(name).json") }
@@ -30,14 +31,15 @@ public class MinecraftInstance: Equatable {
     ///   - manifest: 客户端清单。
     ///   - config: 实例配置。
     ///   - modLoader: 实例安装的模组加载器。
-    public init(runningDirectory: URL, version: MinecraftVersion, manifest: ClientManifest, config: Config, modLoader: ModLoader?) {
+    public init(runningDirectory: URL, version: MinecraftVersion, manifest: ClientManifest, config: Config, modLoader: ModLoader?, modLoaderVersion: String?) {
         self.runningDirectory = runningDirectory
         self.version = version
         self.manifest = manifest
         self.config = config
         self.modLoader = modLoader
+        self.modLoaderVersion = modLoaderVersion
         VersionCache.add(version: version, for: self)
-        if config.javaURL == nil {
+        if config.autoSelectJava && config.javaURL == nil {
             setJava(url: searchJava().map(\.executableURL))
         }
     }
@@ -54,6 +56,11 @@ public class MinecraftInstance: Equatable {
         saveConfig()
         cachedJavaRuntime = nil
     }
+
+    public func setAutoSelectJava(_ enabled: Bool) {
+        config.autoSelectJava = enabled
+        saveConfig()
+    }
     
     /// 搜索最适合的 Java。
     /// - Parameters:
@@ -61,10 +68,12 @@ public class MinecraftInstance: Equatable {
     /// - Returns: 搜到的 Java。
     @discardableResult
     public func searchJava(arch: Architecture? = nil) -> JavaRuntime? {
+        let javaRange = manifest.supportedJavaMajorRange(for: version, modLoader: modLoader, modLoaderVersion: modLoaderVersion)
+
         func getScore(of runtime: JavaRuntime) -> Int {
             var score: Int = 0
             if runtime.architecture == (version > .init("1.7.2") ? .systemArchitecture() : .x64) { score += 3 }
-            if runtime.majorVersion == manifest.javaVersion.majorVersion { score += 2 }
+            if runtime.majorVersion == manifest.requiredJavaMajorVersion(for: version) { score += 2 }
             if runtime.type == .jdk { score += 1 }
             if runtime.implementor?.contains("Azul") == true { score += 1 }
             return score
@@ -72,7 +81,8 @@ public class MinecraftInstance: Equatable {
         
         if let runtime: JavaRuntime = JavaManager.shared.javaRuntimes
             .filter({ $0.architecture == (arch ?? $0.architecture) })
-            .filter({ $0.majorVersion >= manifest.javaVersion.majorVersion })
+            .filter({ $0.majorVersion >= manifest.requiredJavaMajorVersion(for: version) })
+            .filter({ javaRange.contains($0.majorVersion) })
             .max(by: { getScore(of: $0) < getScore(of: $1) }) {
             return runtime
         }
@@ -97,6 +107,34 @@ public class MinecraftInstance: Equatable {
             setJava(url: nil)
             return nil
         }
+    }
+
+    private func resolveJavaForLaunch(persistSelection: Bool) -> JavaRuntime? {
+        let minVersion: Int = manifest.requiredJavaMajorVersion(for: version)
+        let javaRange = manifest.supportedJavaMajorRange(for: version, modLoader: modLoader, modLoaderVersion: modLoaderVersion)
+
+        if config.autoSelectJava {
+            guard let runtime: JavaRuntime = searchJava() else {
+                return nil
+            }
+            if persistSelection, config.javaURL != runtime.executableURL {
+                setJava(url: runtime.executableURL)
+            }
+            return runtime
+        }
+
+        guard let runtime: JavaRuntime = javaRuntime(), runtime.majorVersion >= minVersion, javaRange.contains(runtime.majorVersion) else {
+            return nil
+        }
+        return runtime
+    }
+
+    public func previewResolvedJavaForLaunch() -> JavaRuntime? {
+        return resolveJavaForLaunch(persistSelection: false)
+    }
+
+    public func resolveJavaForLaunch() -> JavaRuntime? {
+        return resolveJavaForLaunch(persistSelection: true)
     }
     
     private func saveConfig() {
@@ -123,7 +161,7 @@ public class MinecraftInstance: Equatable {
         // 加载客户端清单
         let manifestURL: URL = runningDirectory.appending(path: "\(runningDirectory.lastPathComponent).json")
         guard FileManager.default.fileExists(atPath: manifestURL.path) else { throw MinecraftError.missingManifest }
-        let (manifest, modLoader): (ClientManifest, ModLoader?) = try ClientManifest.load(at: manifestURL)
+        let (manifest, modLoader, modLoaderVersion): (ClientManifest, ModLoader?, String?) = try ClientManifest.load(at: manifestURL)
         // 获取版本
         let version: MinecraftVersion
         if let cachedVersion = VersionCache.version(of: manifestURL) {
@@ -159,7 +197,8 @@ public class MinecraftInstance: Equatable {
             version: version,
             manifest: manifest,
             config: config ?? .init(),
-            modLoader: modLoader
+            modLoader: modLoader,
+            modLoaderVersion: modLoaderVersion
         )
         return instance
     }
@@ -170,26 +209,30 @@ public class MinecraftInstance: Equatable {
     
     public class Config: Codable {
         public var jvmHeapSize: UInt64
+        public var autoSelectJava: Bool
         public var javaURL: URL?
         
         public init() {
             self.jvmHeapSize = 4096
+            self.autoSelectJava = true
             self.javaURL = nil
         }
         
         private enum CodingKeys: String, CodingKey {
-            case jvmHeapSize, javaURL
+            case jvmHeapSize, autoSelectJava, javaURL
         }
         
         public required init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             self.jvmHeapSize = try container.decode(UInt64.self, forKey: .jvmHeapSize)
+            self.autoSelectJava = try container.decodeIfPresent(Bool.self, forKey: .autoSelectJava) ?? true
             self.javaURL = try container.decodeIfPresent(URL.self, forKey: .javaURL)
         }
         
         public func encode(to encoder: any Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(jvmHeapSize, forKey: .jvmHeapSize)
+            try container.encode(autoSelectJava, forKey: .autoSelectJava)
             try container.encodeIfPresent(javaURL, forKey: .javaURL)
         }
     }

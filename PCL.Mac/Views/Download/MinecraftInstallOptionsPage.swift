@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Core
+import SwiftyJSON
 
 struct MinecraftInstallOptionsPage: View {
     @StateObject private var viewModel: MinecraftInstallOptionsViewModel
@@ -62,14 +63,31 @@ struct MinecraftInstallOptionsPage: View {
                     hint("请先添加一个游戏目录！", type: .critical)
                     return
                 }
-                let version: MinecraftVersion = .init(viewModel.version.id)
-                TaskManager.shared.execute(task: MinecraftInstallTask.create(name: viewModel.name, version: version, repository: repository, modLoader: viewModel.loader) { instance in
+                let hasRunningInstallTask: Bool = TaskManager.shared.tasks
+                    .contains(where: { $0.name.contains("安装") || $0.name.contains("下载") })
+                if hasRunningInstallTask {
+                    hint("当前有正在进行的安装任务，请稍后再试。", type: .info)
+                    if AppRouter.shared.getLast() != .tasks {
+                        AppRouter.shared.append(.tasks)
+                    }
+                    return
+                }
+                let minecraftVersion: MinecraftVersion = .init(viewModel.version.id)
+                TaskManager.shared.execute(task: MinecraftInstallTask.create(name: viewModel.name, version: minecraftVersion, repository: repository, modLoader: viewModel.loader) { instance in
                     instanceVM.switchInstance(to: instance, repository)
                     if AppRouter.shared.getLast() == .tasks {
                         AppRouter.shared.removeLast()
                         if case .minecraftInstallOptions = AppRouter.shared.getLast() {
                             AppRouter.shared.removeLast()
                         }
+                    }
+                }, completion: { error in
+                    if let error {
+                        MessageBoxManager.shared.showText(
+                            title: "下载/安装失败",
+                            content: "任务执行失败：\(error.localizedDescription)\n\n请检查日志后重试。",
+                            level: .error
+                        )
                     }
                 })
                 AppRouter.shared.append(.tasks)
@@ -144,13 +162,13 @@ private struct ModLoaderCard: View {
                 try await Requests.get("https://meta.fabricmc.net/v2/versions/loader/\(minecraftVersion)").json().arrayValue
                     .map { .init(id: $0["loader"]["version"].stringValue) }
             case .forge:
-                try await Requests.get("https://bmclapi2.bangbang93.com/forge/minecraft/\(minecraftVersion)").json().arrayValue
-                    .map { .init(id: $0["version"].stringValue) }
+                try await requestFirstAvailableJSON(from: forgeListMirrors(minecraftVersion: minecraftVersion)).arrayValue
+                    .map { Version(id: $0["version"].stringValue) }
             case .neoforge:
-                try await Requests.get("https://bmclapi2.bangbang93.com/neoforge/list/\(minecraftVersion)").json().arrayValue
+                try await requestFirstAvailableJSON(from: neoForgeListMirrors(minecraftVersion: minecraftVersion)).arrayValue
                     .map { json in
                         let version: String = json["version"].stringValue
-                        return .init(id: version.hasPrefix("1.20.1-") ? String(version.dropFirst("1.20.1-".count)) : version)
+                        return Version(id: version.hasPrefix("1.20.1-") ? String(version.dropFirst("1.20.1-".count)) : version)
                     }
             }
             await MainActor.run {
@@ -160,9 +178,43 @@ private struct ModLoaderCard: View {
         } catch {
             err("加载 \(type) 版本列表失败：\(error.localizedDescription)")
             await MainActor.run {
-                loadState = .error(message: error.localizedDescription)
+                loadState = .error(message: "网络连接中断（镜像重试失败）：\(error.localizedDescription)")
             }
         }
+    }
+
+    private func requestFirstAvailableJSON(from urls: [URL]) async throws -> JSON {
+        let orderedUrls = NetworkMirrorSelector.prioritize(urls, key: "modloader.list.\(type.rawValue)")
+        var errors: [String] = []
+        for url in orderedUrls {
+            try Task.checkCancellation()
+            do {
+                let json = try await Requests.get(url.absoluteString).json()
+                NetworkMirrorSelector.markSuccess(url, key: "modloader.list.\(type.rawValue)")
+                return json
+            } catch {
+                errors.append("\(url.host ?? url.absoluteString): \(error.localizedDescription)")
+            }
+        }
+        throw SimpleError(errors.isEmpty ? "无可用镜像。" : errors.joined(separator: " | "))
+    }
+
+    private func forgeListMirrors(minecraftVersion: String) -> [URL] {
+        [
+            URL(string: "https://bmclapi2.bangbang93.com/forge/minecraft/\(minecraftVersion)")!,
+            URL(string: "https://bmclapi.bangbang93.com/forge/minecraft/\(minecraftVersion)")!,
+            URL(string: "https://download.mcbbs.net/forge/minecraft/\(minecraftVersion)")!,
+            URL(string: "https://bmclapi2-cn.bangbang93.com/forge/minecraft/\(minecraftVersion)")!
+        ]
+    }
+
+    private func neoForgeListMirrors(minecraftVersion: String) -> [URL] {
+        [
+            URL(string: "https://bmclapi2.bangbang93.com/neoforge/list/\(minecraftVersion)")!,
+            URL(string: "https://bmclapi.bangbang93.com/neoforge/list/\(minecraftVersion)")!,
+            URL(string: "https://download.mcbbs.net/neoforge/list/\(minecraftVersion)")!,
+            URL(string: "https://bmclapi2-cn.bangbang93.com/neoforge/list/\(minecraftVersion)")!
+        ]
     }
     
     private enum LoadState: Equatable, CustomStringConvertible {

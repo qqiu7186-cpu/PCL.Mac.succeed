@@ -18,6 +18,7 @@ struct JavaSettingsPage: View {
                     MyButton("刷新 Java 列表") {
                         do {
                             try JavaManager.shared.research()
+                            viewModel.reloadJavaList()
                             hint("刷新成功！", type: .finish)
                         } catch {
                             err("刷新 Java 列表失败：\(error.localizedDescription)")
@@ -29,12 +30,12 @@ struct JavaSettingsPage: View {
                     MyButton("安装 Java") {
                         Task {
                             do {
-                                let downloads: [MojangJavaList.JavaDownload] = try await viewModel.javaDownloads()
+                                let downloads: [JavaDownloadPackage] = try await viewModel.javaDownloads()
                                 if let index: Int = await MessageBoxManager.shared.showListAsync(
                                     title: "选择 Java 版本",
                                     items: downloads.map(viewModel.listItem(forJavaDownload:))
                                 ) {
-                                    TaskManager.shared.execute(task: JavaInstallTask.create(download: downloads[index]))
+                                    TaskManager.shared.execute(task: JavaInstallTask.create(download: downloads[index], replaceExisting: true))
                                     AppRouter.shared.append(.tasks)
                                 }
                             } catch {
@@ -53,6 +54,9 @@ struct JavaSettingsPage: View {
                 MyList(items: viewModel.javaList)
             }
             .cardIndex(1)
+        }
+        .onAppear {
+            viewModel.reloadJavaList()
         }
     }
 }

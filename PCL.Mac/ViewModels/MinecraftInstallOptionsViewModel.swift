@@ -44,6 +44,14 @@ class MinecraftInstallOptionsViewModel: ObservableObject {
     
     private func checkName() {
         do {
+            if name.isEmpty {
+                errorMessage = "实例名不能为空！"
+                return
+            }
+            if loader != nil && name == version.id {
+                errorMessage = "带 Mod 加载器的实例名不能与版本号一致！"
+                return
+            }
             guard let repository: MinecraftRepository = InstanceManager.shared.currentRepository else {
                 throw SimpleError("检查实例名失败：请先添加并选择一个游戏目录！")
             }

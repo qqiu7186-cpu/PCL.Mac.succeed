@@ -13,6 +13,8 @@ class InstanceConfigViewModel: ObservableObject {
     @Published public var instance: MinecraftInstance?
     @Published public var jvmHeapSize: String = ""
     @Published public var javaDescription: String = "无"
+    @Published public var autoSelectJava: Bool = true
+    @Published public var javaSelectionHint: String = ""
     @Published public var loaded: Bool = false
     
     public var description: String {
@@ -38,14 +40,11 @@ class InstanceConfigViewModel: ObservableObject {
     
     public func load() async throws {
         let instance: MinecraftInstance = try InstanceManager.shared.loadInstance(id)
-        await MainActor.run {
-            self.instance = instance
-            self.jvmHeapSize = instance.config.jvmHeapSize.description
-            if let runtime: JavaRuntime = instance.javaRuntime() {
-                self.javaDescription = runtime.description
-            }
-            self.loaded = true
-        }
+        self.instance = instance
+        self.jvmHeapSize = instance.config.jvmHeapSize.description
+        self.autoSelectJava = instance.config.autoSelectJava
+        self.refreshJavaDescription()
+        self.loaded = true
     }
     
     public func javaList() -> [JavaRuntime] {
@@ -63,14 +62,49 @@ class InstanceConfigViewModel: ObservableObject {
     @MainActor
     public func switchJava(to runtime: JavaRuntime) throws {
         guard let instance else { return }
-        if runtime.majorVersion < instance.manifest.javaVersion.majorVersion {
-            throw Error.invalidJavaVersion(min: instance.manifest.javaVersion.majorVersion)
+        let javaRange = instance.manifest.supportedJavaMajorRange(
+            for: instance.version,
+            modLoader: instance.modLoader,
+            modLoaderVersion: instance.modLoaderVersion
+        )
+        if !javaRange.contains(runtime.majorVersion) {
+            throw Error.invalidJavaVersion(min: javaRange.lowerBound, max: javaRange.upperBound)
         }
+        instance.config.autoSelectJava = false
         instance.setJava(url: runtime.executableURL)
-        javaDescription = runtime.description
+        autoSelectJava = false
+        refreshJavaDescription()
+    }
+
+    @MainActor
+    public func setAutoSelectJava(_ enabled: Bool) {
+        guard let instance else { return }
+        instance.setAutoSelectJava(enabled)
+        if enabled {
+            _ = instance.resolveJavaForLaunch()
+        }
+        autoSelectJava = enabled
+        refreshJavaDescription()
+    }
+
+    @MainActor
+    public func refreshJavaDescription() {
+        guard let instance else {
+            javaDescription = "无"
+            javaSelectionHint = ""
+            return
+        }
+
+        if let runtime: JavaRuntime = instance.previewResolvedJavaForLaunch() {
+            javaDescription = runtime.description
+            javaSelectionHint = "当前模式：\(instance.config.autoSelectJava ? "自动" : "手动")。当前生效：\(runtime.version)（\(runtime.executableURL.path)）"
+        } else {
+            javaDescription = "无"
+            javaSelectionHint = "当前模式：\(instance.config.autoSelectJava ? "自动" : "手动")。当前生效：未找到可用 Java"
+        }
     }
     
     public enum Error: Swift.Error {
-        case invalidJavaVersion(min: Int)
+        case invalidJavaVersion(min: Int, max: Int)
     }
 }

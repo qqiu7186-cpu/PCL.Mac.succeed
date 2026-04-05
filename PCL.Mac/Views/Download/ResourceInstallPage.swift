@@ -154,6 +154,7 @@ struct ResourceInstallPage: View {
                 name: name
             ) { instance in
                 InstanceManager.shared.switchInstance(to: instance, repository)
+                hint("整合包安装完成：\(instance.name)", type: .finish)
             }
         } catch {
             err("创建安装任务失败：\(error.localizedDescription)")
@@ -161,6 +162,7 @@ struct ResourceInstallPage: View {
             return
         }
         TaskManager.shared.execute(task: installTask)
+        AppRouter.shared.append(.tasks)
     }
     
     @ViewBuilder

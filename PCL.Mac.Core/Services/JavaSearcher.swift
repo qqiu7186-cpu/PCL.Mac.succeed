@@ -29,7 +29,15 @@ public enum JavaSearcher {
                 debug("homeDirectory：\(homeDirectory.path)")
             }
         }
-        return runtimes
+        if let systemRuntime = loadSystemJavaRuntime() {
+            runtimes.append(systemRuntime)
+        }
+        var deduplicated: [String: JavaRuntime] = [:]
+        for runtime in runtimes {
+            let key = runtime.executableURL.resolvingSymlinksInPath().standardizedFileURL.path
+            deduplicated[key] = runtime
+        }
+        return Array(deduplicated.values)
     }
     
     /// 加载磁盘上的 `JavaRuntime`。
@@ -144,5 +152,54 @@ public enum JavaSearcher {
             }
         }
         return bundleDirectories.filter { FileManager.default.fileExists(atPath: $0.appending(path: "Contents/Home/release").path) }
+    }
+
+    private static func loadSystemJavaRuntime() -> JavaRuntime? {
+        let executableURL = URL(fileURLWithPath: "/usr/bin/java")
+        guard FileManager.default.isExecutableFile(atPath: executableURL.path) else { return nil }
+
+        let process: Process = .init()
+        process.executableURL = executableURL
+        process.arguments = ["-version"]
+
+        let pipe: Pipe = .init()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+
+        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: outputData, as: UTF8.self)
+
+        guard
+            let versionQuoted = output.components(separatedBy: "\"").dropFirst().first,
+            let major = parseVersionNumber(versionQuoted)
+        else {
+            return nil
+        }
+
+        let implementor: String?
+        if output.lowercased().contains("openj9") {
+            implementor = "IBM Semeru"
+        } else if output.lowercased().contains("microsoft") {
+            implementor = "Microsoft"
+        } else {
+            implementor = nil
+        }
+
+        return JavaRuntime(
+            version: versionQuoted,
+            majorVersion: major,
+            type: .jdk,
+            architecture: .systemArchitecture(),
+            implementor: implementor,
+            executableURL: executableURL
+        )
     }
 }

@@ -27,6 +27,110 @@ public class ClientManifest: Decodable {
     
     // 非标准字段
     public let version: String?
+
+    public func requiredJavaMajorVersion(for minecraftVersion: MinecraftVersion? = nil) -> Int {
+        let manifestMajor = javaVersion.majorVersion
+        let heuristicMajor: Int
+        if let minecraftVersion {
+            if minecraftVersion >= .init("1.20.5") {
+                heuristicMajor = 21
+            } else if minecraftVersion >= .init("1.18") {
+                heuristicMajor = 17
+            } else if minecraftVersion >= .init("1.17") {
+                heuristicMajor = 16
+            } else {
+                heuristicMajor = 8
+            }
+        } else {
+            heuristicMajor = 8
+        }
+        return max(manifestMajor, heuristicMajor)
+    }
+
+    public func supportedJavaMajorRange(for minecraftVersion: MinecraftVersion? = nil, modLoader: ModLoader? = nil, modLoaderVersion: String? = nil) -> ClosedRange<Int> {
+        let minMajor = requiredJavaMajorVersion(for: minecraftVersion)
+        let maxMajor: Int
+        let normalizedLoaderVersion = normalizeLoaderVersion(modLoaderVersion, for: minecraftVersion)
+        let loaderLineMajor = loaderMajorLine(from: normalizedLoaderVersion)
+        if let minecraftVersion {
+            if minecraftVersion <= .init("1.5.2") {
+                maxMajor = 8
+            } else if let modLoader {
+                switch modLoader {
+                case .forge:
+                    if minecraftVersion <= .init("1.16.5") {
+                        maxMajor = 8
+                    } else if minecraftVersion <= .init("1.20.1") {
+                        maxMajor = 17
+                    } else if let loaderLineMajor {
+                        maxMajor = loaderLineMajor < 50 ? 17 : 26
+                    } else if minecraftVersion <= .init("1.20.4") {
+                        maxMajor = 17
+                    } else {
+                        maxMajor = 26
+                    }
+                case .neoforge:
+                    if minecraftVersion <= .init("1.20.1") {
+                        maxMajor = 17
+                    } else if minecraftVersion <= .init("1.20.4") {
+                        if let loaderLineMajor, loaderLineMajor < 21 {
+                            maxMajor = 17
+                        } else if loaderLineMajor == nil {
+                            maxMajor = 17
+                        } else {
+                            maxMajor = 21
+                        }
+                    } else if let loaderLineMajor, loaderLineMajor < 21 {
+                        maxMajor = 21
+                    } else if loaderLineMajor == nil {
+                        maxMajor = 21
+                    } else {
+                        maxMajor = 26
+                    }
+                case .fabric:
+                    if minecraftVersion <= .init("1.16.5") {
+                        maxMajor = 17
+                    } else {
+                        maxMajor = 26
+                    }
+                }
+            } else {
+                maxMajor = 26
+            }
+        } else {
+            maxMajor = 26
+        }
+        return minMajor...max(maxMajor, minMajor)
+    }
+
+    private func normalizeLoaderVersion(_ loaderVersion: String?, for minecraftVersion: MinecraftVersion?) -> String? {
+        guard let loaderVersion else { return nil }
+        let trimmed = loaderVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let minecraftVersion else { return trimmed }
+        let prefix = "\(minecraftVersion.id)-"
+        if trimmed.hasPrefix(prefix) {
+            return String(trimmed.dropFirst(prefix.count))
+        }
+        return trimmed
+    }
+
+    private func loaderMajorLine(from loaderVersion: String?) -> Int? {
+        guard let loaderVersion else { return nil }
+        let trimmed = loaderVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        for segment in trimmed.split(separator: "-").reversed() {
+            let digits = segment.prefix { $0.isNumber }
+            if !digits.isEmpty, let value = Int(digits) {
+                return value
+            }
+        }
+
+        let headDigits = trimmed.prefix { $0.isNumber }
+        guard !headDigits.isEmpty else { return nil }
+        return Int(headDigits)
+    }
     
     private enum CodingKeys: String, CodingKey {
         case arguments, assetIndex, downloads, id, javaVersion, libraries, logging, mainClass, type
@@ -424,9 +528,8 @@ public extension ClientManifest {
     /// - Parameters:
     ///   - url: 客户端清单文件 `URL`。
     ///   - loadParent: 是否加载父清单（`inhertsFrom`）。如果此参数为 `false`，且清单中包含 `inheritsFrom` 键，会抛出 `LoadError.missingParentManifest` 错误。
-    /// - Returns: `ClientManifest` 和推测的 Mod Loader。
     /// - Throws: `LoadError`
-    static func load(at url: URL, loadParent: Bool = true) throws -> (ClientManifest, ModLoader?) {
+    static func load(at url: URL, loadParent: Bool = true) throws -> (ClientManifest, ModLoader?, String?) {
         guard FileManager.default.fileExists(atPath: url.path) else { throw LoadError.fileNotFound }
         let data: Data
         do {
@@ -434,20 +537,9 @@ public extension ClientManifest {
         } catch {
             throw LoadError.failedToRead(underlying: error)
         }
-        
-        let modLoader: ModLoader?
-        guard let str: String = .init(data: data, encoding: .utf8) else { throw LoadError.formatError }
-        if str.contains("neoforge") {
-            modLoader = .neoforge
-        } else if str.contains("forge") {
-            modLoader = .forge
-        } else if str.contains("fabric") {
-            modLoader = .fabric
-        } else {
-            modLoader = nil
-        }
-        
+
         let manifest: ClientManifest = try .load(from: data)
+        let mergedManifest: ClientManifest
         if let inheritsFrom: String = manifest.inheritsFrom {
             guard loadParent else { throw LoadError.missingParentManifest }
             let parentURLs: [URL] = [
@@ -459,11 +551,41 @@ public extension ClientManifest {
                     continue
                 }
                 let parentManifest: ClientManifest = try .load(at: parentURL, loadParent: false).0
-                return (manifest.merge(to: parentManifest), modLoader)
+                mergedManifest = manifest.merge(to: parentManifest)
+                let detected = detectModLoader(from: mergedManifest)
+                return (mergedManifest, detected.type, detected.version)
             }
             throw LoadError.missingParentManifest
         }
-        return (manifest, modLoader)
+        mergedManifest = manifest
+        let detected = detectModLoader(from: mergedManifest)
+        return (mergedManifest, detected.type, detected.version)
+    }
+
+    private static func detectModLoader(from manifest: ClientManifest) -> (type: ModLoader?, version: String?) {
+        for library in manifest.libraries {
+            let name = library.name
+            if name.hasPrefix("net.neoforged:neoforge:") || name.hasPrefix("net.neoforged:forge:") {
+                return (.neoforge, library.version)
+            }
+            if name.hasPrefix("net.minecraftforge:forge:") {
+                return (.forge, library.version)
+            }
+            if name.hasPrefix("net.fabricmc:fabric-loader:") {
+                return (.fabric, library.version)
+            }
+        }
+
+        if manifest.mainClass.lowercased().contains("fabric") {
+            return (.fabric, nil)
+        }
+        if manifest.mainClass.lowercased().contains("neoforge") {
+            return (.neoforge, nil)
+        }
+        if manifest.mainClass.lowercased().contains("forge") {
+            return (.forge, nil)
+        }
+        return (nil, nil)
     }
     
     static func load(from data: Data) throws -> ClientManifest {

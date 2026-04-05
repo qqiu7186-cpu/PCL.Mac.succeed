@@ -81,6 +81,35 @@ class InstanceManager: ObservableObject {
         try? currentRepository.load()
         switchRepository(to: currentRepository)
     }
+
+    public func renameInstance(_ instance: MinecraftInstance, to newName: String) throws -> MinecraftInstance {
+        guard let currentRepository else {
+            throw SimpleError("未设置当前仓库。")
+        }
+
+        let normalizedName: String = try currentRepository.checkInstanceName(newName)
+        let oldDirectory = currentRepository.versionsURL.appending(path: instance.name)
+        let newDirectory = currentRepository.versionsURL.appending(path: normalizedName)
+
+        try FileManager.default.moveItem(at: oldDirectory, to: newDirectory)
+
+        let oldManifest = newDirectory.appending(path: "\(instance.name).json")
+        let newManifest = newDirectory.appending(path: "\(normalizedName).json")
+        if FileManager.default.fileExists(atPath: oldManifest.path) {
+            try? FileManager.default.moveItem(at: oldManifest, to: newManifest)
+        }
+
+        let oldJar = newDirectory.appending(path: "\(instance.name).jar")
+        let newJar = newDirectory.appending(path: "\(normalizedName).jar")
+        if FileManager.default.fileExists(atPath: oldJar.path) {
+            try? FileManager.default.moveItem(at: oldJar, to: newJar)
+        }
+
+        try currentRepository.load()
+        let renamed = try currentRepository.instance(id: normalizedName)
+        switchInstance(to: renamed, currentRepository)
+        return renamed
+    }
     
     /// 切换当前仓库。
     /// - Parameter repository: 目标仓库。

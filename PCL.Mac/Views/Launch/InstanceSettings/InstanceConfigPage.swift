@@ -75,8 +75,20 @@ struct InstanceConfigPage: View {
     @ViewBuilder
     private var jvmCard: some View {
         MyCard("JVM 设置", foldable: false) {
+            configLine(label: "Java 选择") {
+                Toggle("自动", isOn: $viewModel.autoSelectJava)
+                    .labelsHidden()
+                    .onChange(of: viewModel.autoSelectJava) { newValue in
+                        viewModel.setAutoSelectJava(newValue)
+                    }
+                MyText(viewModel.autoSelectJava ? "自动" : "手动")
+            }
             configLine(label: "使用的 Java") {
                 MyText(viewModel.javaDescription)
+            }
+            configLine(label: "当前生效") {
+                MyText(viewModel.javaSelectionHint)
+                    .lineLimit(2)
             }
             configLine(label: "内存分配") {
                 MyTextField(text: $viewModel.jvmHeapSize)
@@ -98,14 +110,21 @@ struct InstanceConfigPage: View {
                             try viewModel.switchJava(to: runtime)
                         } catch let error as InstanceConfigViewModel.Error {
                             switch error {
-                            case .invalidJavaVersion(let min):
+                            case .invalidJavaVersion(let min, let max):
                                 MessageBoxManager.shared.showText(
                                     title: "Java 版本不满足要求",
-                                    content: "这个实例需要 Java \(min) 才能启动，但你选择的是 Java \(runtime.version)！",
+                                    content: "这个实例需要 Java \(min)-\(max) 才能启动，但你选择的是 Java \(runtime.version)！",
                                     level: .error
                                 )
                             }
-                        } catch {}
+                        } catch {
+                            err("切换 Java 失败：\(error.localizedDescription)")
+                            MessageBoxManager.shared.showText(
+                                title: "切换 Java 失败",
+                                content: "发生错误：\(error.localizedDescription)",
+                                level: .error
+                            )
+                        }
                     }
                 }
                 .frame(minWidth: 150)

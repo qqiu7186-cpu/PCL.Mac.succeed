@@ -92,7 +92,7 @@ public class ForgeInstallService {
     /// - Returns: 是否是新版本安装器，且需要继续执行后续步骤。
     private func downloadInstaller(progressHandler: @MainActor @escaping (Double) -> Void) async throws -> Bool {
         let destination: URL = tempDirectory.appending(path: "installer.jar")
-        try await SingleFileDownloader.download(url: installerDownloadURL(), destination: destination, sha1: nil, replaceMethod: .skip, progressHandler: progressHandler)
+        try await downloadInstallerFromMirrors(destination: destination, progressHandler: progressHandler)
         _ = try FileManager.default.unzipItem(at: destination, to: installerURL)
         
         // 处理客户端清单
@@ -127,8 +127,32 @@ public class ForgeInstallService {
         }
     }
     
-    internal func installerDownloadURL() -> URL {
-        return .init(string: "https://files.minecraftforge.net/maven/net/minecraftforge/forge/\(minecraftVersion)-\(version)/forge-\(minecraftVersion)-\(version)-installer.jar")!
+    internal func installerDownloadURLs() -> [URL] {
+        let path = "net/minecraftforge/forge/\(minecraftVersion)-\(version)/forge-\(minecraftVersion)-\(version)-installer.jar"
+        return [
+            URL(string: "https://files.minecraftforge.net/maven/\(path)")!,
+            URL(string: "https://maven.minecraftforge.net/\(path)")!,
+            URL(string: "https://bmclapi2.bangbang93.com/maven/\(path)")!,
+            URL(string: "https://bmclapi.bangbang93.com/maven/\(path)")!,
+            URL(string: "https://download.mcbbs.net/maven/\(path)")!,
+            URL(string: "https://bmclapi2-cn.bangbang93.com/maven/\(path)")!
+        ]
+    }
+
+    private func downloadInstallerFromMirrors(destination: URL, progressHandler: @MainActor @escaping (Double) -> Void) async throws {
+        var errors: [String] = []
+        let urls = NetworkMirrorSelector.prioritize(installerDownloadURLs(), key: "installer.forge")
+        for url in urls {
+            try Task.checkCancellation()
+            do {
+                try await SingleFileDownloader.download(url: url, destination: destination, sha1: nil, replaceMethod: .replace, progressHandler: progressHandler)
+                NetworkMirrorSelector.markSuccess(url, key: "installer.forge")
+                return
+            } catch {
+                errors.append("\(url.host ?? url.absoluteString): \(error.localizedDescription)")
+            }
+        }
+        throw SimpleError(errors.isEmpty ? "Forge 安装器下载失败：无可用镜像。" : "Forge 安装器下载失败：\(errors.joined(separator: " | "))")
     }
     
     private func makeValueDict() -> [String: String] {

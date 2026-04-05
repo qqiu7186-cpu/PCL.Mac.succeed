@@ -374,56 +374,59 @@ public enum MinecraftLaunchTask {
             modLoader: instance.modLoader,
             modLoaderVersion: instance.modLoaderVersion
         )
-        guard let download = await preferredJavaDownload(minVersion: minVersion, maxVersion: javaRange.upperBound) else {
+        let downloads = await preferredJavaDownloads(minVersion: minVersion, maxVersion: javaRange.upperBound)
+        guard !downloads.isEmpty else {
             return nil
         }
 
-        do {
-            log("未找到可用 Java，开始自动安装 \(download.version)")
-            try await JavaInstallTask.create(download: download, replaceExisting: true).start()
-        } catch {
-            err("自动安装 Java 失败：\(error.localizedDescription)")
-            return nil
+        for download in downloads {
+            do {
+                log("未找到可用 Java，开始自动安装 \(download.displaySourceName) \(download.version)")
+                try await JavaInstallTask.create(download: download, replaceExisting: true).start()
+            } catch {
+                err("自动安装 Java 失败（\(download.displaySourceName) \(download.version)）：\(error.localizedDescription)")
+                continue
+            }
+
+            if let runtime = bestHealthyRuntime(for: instance, minVersion: minVersion, excluding: excluding) {
+                return runtime
+            }
+
+            warn("自动安装的 Java 预检失败，继续尝试其他可用下载源：\(download.displaySourceName) \(download.version)")
         }
 
-        return bestHealthyRuntime(for: instance, minVersion: minVersion, excluding: excluding)
+        return nil
     }
 
-    private static func preferredJavaDownload(minVersion: Int, maxVersion: Int) async -> JavaDownloadPackage? {
+    private static func preferredJavaDownloads(minVersion: Int, maxVersion: Int) async -> [JavaDownloadPackage] {
         do {
-            let downloads: [JavaDownloadPackage] = try await JavaSettingsViewModel().javaDownloads()
+            let downloads: [JavaDownloadPackage] = try await JavaSettingsViewModel().javaDownloads(includeAllProviders: true)
             let rangedDownloads = downloads.filter { $0.majorVersion >= minVersion && $0.majorVersion <= maxVersion }
             guard !rangedDownloads.isEmpty else {
-                return nil
+                return []
             }
 
-            let parsed = rangedDownloads.map { (download: $0, major: $0.majorVersion, isPrerelease: isPrereleaseJavaVersion($0.version)) }
+            return rangedDownloads.sorted { lhs, rhs in
+                if lhs.majorVersion != rhs.majorVersion {
+                    let lhsDistance = abs(lhs.majorVersion - minVersion)
+                    let rhsDistance = abs(rhs.majorVersion - minVersion)
+                    if lhsDistance != rhsDistance { return lhsDistance < rhsDistance }
+                    return lhs.majorVersion < rhs.majorVersion
+                }
 
-            if let exact = parsed
-                .filter({ $0.major == minVersion })
-                .sorted(by: { lhs, rhs in
-                    if lhs.isPrerelease != rhs.isPrerelease { return rhs.isPrerelease }
-                    return lhs.download.version.compare(rhs.download.version, options: .numeric) == .orderedDescending
-                })
-                .first {
-                return exact.download
+                let lhsPre = isPrereleaseJavaVersion(lhs.version)
+                let rhsPre = isPrereleaseJavaVersion(rhs.version)
+                if lhsPre != rhsPre { return rhsPre }
+
+                if lhs.provider != rhs.provider {
+                    return lhs.provider == .azulZulu
+                }
+
+                return lhs.version.compare(rhs.version, options: .numeric) == .orderedDescending
             }
-
-            if let higher = parsed
-                .filter({ $0.major > minVersion })
-                .sorted(by: { lhs, rhs in
-                    if lhs.major != rhs.major { return lhs.major < rhs.major }
-                    if lhs.isPrerelease != rhs.isPrerelease { return rhs.isPrerelease }
-                    return lhs.download.version.compare(rhs.download.version, options: .numeric) == .orderedDescending
-                })
-                .first {
-                return higher.download
-            }
-
-            return rangedDownloads.first
         } catch {
             err("拉取 Java 下载列表失败：\(error.localizedDescription)")
-            return nil
+            return []
         }
     }
 
@@ -448,9 +451,44 @@ public enum MinecraftLaunchTask {
     }
 
     private static func checkRuntimeHealth(_ runtime: JavaRuntime) -> RuntimeHealth {
+        var baseProbe = runJavaProbe(runtime, arguments: ["-version"])
+        if !baseProbe.isHealthy, baseProbe.reason == "收到信号退出" {
+            if attemptRuntimeSignalRecovery(runtime) {
+                let recoveredProbe = runJavaProbe(runtime, arguments: ["-version"])
+                if recoveredProbe.isHealthy {
+                    warn("Java 预检信号退出，尝试修复运行时后恢复成功：\(runtime.executableURL.path)")
+                    baseProbe = recoveredProbe
+                } else {
+                    baseProbe = recoveredProbe
+                }
+            }
+        }
+        guard baseProbe.isHealthy else {
+            return .init(isHealthy: false, reason: baseProbe.reason)
+        }
+
+        let extendedArguments = probeArguments(for: runtime)
+        guard extendedArguments != ["-version"] else {
+            return .init(isHealthy: true, reason: "OK")
+        }
+
+        let extendedProbe = runJavaProbe(runtime, arguments: extendedArguments)
+        if extendedProbe.isHealthy {
+            return .init(isHealthy: true, reason: "OK")
+        }
+
+        if isJvmOptionCompatibilityIssue(extendedProbe.output) {
+            warn("Java 高级参数预检失败，降级为基础预检：\(extendedProbe.reason)")
+            return .init(isHealthy: true, reason: "基础预检通过")
+        }
+
+        return .init(isHealthy: false, reason: extendedProbe.reason)
+    }
+
+    private static func runJavaProbe(_ runtime: JavaRuntime, arguments: [String]) -> RuntimeHealth {
         let process: Process = .init()
         process.executableURL = runtime.executableURL
-        process.arguments = probeArguments(for: runtime)
+        process.arguments = arguments
 
         let pipe: Pipe = .init()
         process.standardOutput = pipe
@@ -459,38 +497,39 @@ public enum MinecraftLaunchTask {
         do {
             try process.run()
         } catch {
-            return .init(isHealthy: false, reason: "无法执行：\(error.localizedDescription)")
+            return .init(isHealthy: false, reason: "无法执行：\(error.localizedDescription)", output: "")
         }
 
         let start = Date()
         while process.isRunning {
             if Date().timeIntervalSince(start) > 8 {
                 process.terminate()
-                return .init(isHealthy: false, reason: "预检超时")
+                return .init(isHealthy: false, reason: "预检超时", output: "")
             }
             Thread.sleep(forTimeInterval: 0.05)
         }
 
         let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(decoding: outputData, as: UTF8.self).lowercased()
+        let output = String(decoding: outputData, as: UTF8.self)
+        let lowered = output.lowercased()
 
         if process.terminationReason == .uncaughtSignal {
-            return .init(isHealthy: false, reason: "收到信号退出")
+            return .init(isHealthy: false, reason: "收到信号退出", output: lowered)
+        }
+        if lowered.contains("fatal error has been detected by the java runtime environment") {
+            return .init(isHealthy: false, reason: "JVM 自身致命错误", output: lowered)
         }
         if process.terminationStatus != 0 {
-            return .init(isHealthy: false, reason: "退出码 \(process.terminationStatus)")
-        }
-        if output.contains("fatal error has been detected by the java runtime environment") {
-            return .init(isHealthy: false, reason: "JVM 自身致命错误")
+            return .init(isHealthy: false, reason: "退出码 \(process.terminationStatus)", output: lowered)
         }
 
-        return .init(isHealthy: true, reason: "OK")
+        return .init(isHealthy: true, reason: "OK", output: lowered)
     }
 
     private static func probeArguments(for runtime: JavaRuntime) -> [String] {
         var arguments: [String] = [
-            "-Xms512M",
-            "-Xmx1024M"
+            "-Xms256M",
+            "-Xmx512M"
         ]
 
         if isOpenJ9(runtime) {
@@ -539,9 +578,93 @@ public enum MinecraftLaunchTask {
         return runtime.executableURL.path == "/usr/bin/java"
     }
 
+    private static func attemptRuntimeSignalRecovery(_ runtime: JavaRuntime) -> Bool {
+        var repaired = false
+
+        let executablePath = runtime.executableURL.path
+        if runTool("/bin/chmod", arguments: ["u+x", executablePath]) {
+            repaired = true
+        }
+
+        if let bundleRoot = javaBundleRoot(for: runtime.executableURL) {
+            if runTool("/usr/bin/xattr", arguments: ["-dr", "com.apple.quarantine", bundleRoot.path]) {
+                repaired = true
+            }
+        }
+
+        return repaired
+    }
+
+    private static func javaBundleRoot(for executableURL: URL) -> URL? {
+        let executablePath = executableURL.resolvingSymlinksInPath().standardizedFileURL.path
+        guard executablePath.contains("/Contents/Home/bin/java") else {
+            return nil
+        }
+
+        let root = executableURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
+        guard rootPath != "/" else {
+            return nil
+        }
+        let lowercased = rootPath.lowercased()
+        guard lowercased.hasSuffix(".jdk") || lowercased.hasSuffix(".jre") || lowercased.hasSuffix(".bundle") else {
+            return nil
+        }
+        return root
+    }
+
+    @discardableResult
+    private static func runTool(_ executablePath: String, arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            warn("执行工具失败：\(executablePath) \(arguments.joined(separator: " "))，\(error.localizedDescription)")
+            return false
+        }
+
+        if process.terminationStatus == 0 {
+            return true
+        }
+
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !output.isEmpty {
+            warn("工具执行失败：\(executablePath) \(arguments.joined(separator: " "))，\(output)")
+        }
+        return false
+    }
+
+    private static func isJvmOptionCompatibilityIssue(_ output: String) -> Bool {
+        output.contains("unrecognized vm option")
+            || output.contains("could not create the java virtual machine")
+            || output.contains("a fatal exception has occurred. program will exit")
+    }
+
     private struct RuntimeHealth {
         let isHealthy: Bool
         let reason: String
+        let output: String
+
+        init(isHealthy: Bool, reason: String, output: String = "") {
+            self.isHealthy = isHealthy
+            self.reason = reason
+            self.output = output
+        }
     }
     
     public class Model: TaskModel {

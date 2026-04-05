@@ -66,7 +66,11 @@ class JavaSettingsViewModel: ObservableObject {
         }
     }
     
-    public func javaDownloads(forArchitecture architecture: Architecture = .systemArchitecture(), preferredMajor: Int = 21) async throws -> [JavaDownloadPackage] {
+    public func javaDownloads(
+        forArchitecture architecture: Architecture = .systemArchitecture(),
+        preferredMajor: Int = 21,
+        includeAllProviders: Bool = false
+    ) async throws -> [JavaDownloadPackage] {
         async let mojangDownloadsTask: [JavaDownloadPackage] = {
             do {
                 return try await fetchMojangJavaDownloads(forArchitecture: architecture)
@@ -87,12 +91,18 @@ class JavaSettingsViewModel: ObservableObject {
         let mojangDownloads = await mojangDownloadsTask
         let azulDownloads = await azulDownloadsTask
 
-        let merged = mergeDownloads(primary: mojangDownloads, secondary: azulDownloads)
-        guard !merged.isEmpty else {
+        let candidates: [JavaDownloadPackage]
+        if includeAllProviders {
+            candidates = mojangDownloads + azulDownloads
+        } else {
+            candidates = mergeDownloads(primary: mojangDownloads, secondary: azulDownloads)
+        }
+
+        guard !candidates.isEmpty else {
             throw SimpleError("无法获取可下载的 Java 版本列表")
         }
 
-        return merged.sorted { lhs, rhs in
+        return candidates.sorted { lhs, rhs in
             let lhsMajor = lhs.majorVersion
             let rhsMajor = rhs.majorVersion
             let lhsPre = isPrerelease(lhs.version)

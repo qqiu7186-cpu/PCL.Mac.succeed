@@ -70,7 +70,16 @@ public enum JavaInstallTask {
                     let archiveURL = try model.archiveURL.unwrap()
                     let extractDirectory = tempDirectory.appending(path: "archive-extracted")
                     try FileManager.default.createDirectory(at: extractDirectory, withIntermediateDirectories: true)
-                    try FileManager.default.unzipItem(at: archiveURL, to: extractDirectory)
+                    do {
+                        try FileManager.default.unzipItem(at: archiveURL, to: extractDirectory)
+                    } catch {
+                        warn("ZIPFoundation 解压失败，尝试使用系统 ditto 回退：\(error.localizedDescription)")
+                        do {
+                            try unzipWithDitto(archiveURL: archiveURL, destination: extractDirectory)
+                        } catch {
+                            throw SimpleError("Java 压缩包解压失败：\(error.localizedDescription)")
+                        }
+                    }
                     bundleRoot = try findJavaBundleRoot(in: extractDirectory)
                 }
                 try FileManager.default.createDirectory(at: bundleDestination.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -126,5 +135,31 @@ public enum JavaInstallTask {
             }
         }
         throw SimpleError("压缩包中未找到有效的 Java 运行时")
+    }
+
+    private static func unzipWithDitto(archiveURL: URL, destination: URL) throws {
+        let process: Process = .init()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", archiveURL.path, destination.path]
+
+        let pipe: Pipe = .init()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+        } catch {
+            throw SimpleError("调用系统解压工具失败：\(error.localizedDescription)")
+        }
+
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if output.isEmpty {
+                throw SimpleError("系统解压工具执行失败，退出码 \(process.terminationStatus)")
+            }
+            throw SimpleError("系统解压工具执行失败：\(output)")
+        }
     }
 }

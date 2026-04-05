@@ -421,13 +421,25 @@ public enum MinecraftLaunchTask {
 
     private static func preferredJavaDownloads(minVersion: Int, maxVersion: Int) async -> [JavaDownloadPackage] {
         do {
-            let downloads: [JavaDownloadPackage] = try await JavaSettingsViewModel().javaDownloads(includeAllProviders: true)
+            let viewModel = JavaSettingsViewModel()
+            let architectures = preferredDownloadArchitectures(for: minVersion)
+            var downloads: [JavaDownloadPackage] = []
+            for architecture in architectures {
+                downloads += try await viewModel.javaDownloads(forArchitecture: architecture, preferredMajor: minVersion, includeAllProviders: true)
+            }
+
             let rangedDownloads = downloads.filter { $0.majorVersion >= minVersion && $0.majorVersion <= maxVersion }
             guard !rangedDownloads.isEmpty else {
                 return []
             }
 
             return rangedDownloads.sorted { lhs, rhs in
+                let lhsArchitecturePriority = architecturePriority(lhs.architecture)
+                let rhsArchitecturePriority = architecturePriority(rhs.architecture)
+                if lhsArchitecturePriority != rhsArchitecturePriority {
+                    return lhsArchitecturePriority < rhsArchitecturePriority
+                }
+
                 if lhs.majorVersion != rhs.majorVersion {
                     let lhsDistance = abs(lhs.majorVersion - minVersion)
                     let rhsDistance = abs(rhs.majorVersion - minVersion)
@@ -448,6 +460,38 @@ public enum MinecraftLaunchTask {
         } catch {
             err("拉取 Java 下载列表失败：\(error.localizedDescription)")
             return []
+        }
+    }
+
+    private static func preferredDownloadArchitectures(for minVersion: Int) -> [Architecture] {
+        let systemArchitecture = Architecture.systemArchitecture()
+        guard systemArchitecture == .arm64, minVersion >= 26, supportsX64JavaFallback() else {
+            return [systemArchitecture]
+        }
+        return [.arm64, .x64]
+    }
+
+    private static func architecturePriority(_ architecture: Architecture) -> Int {
+        switch architecture {
+        case .arm64:
+            return 0
+        case .x64:
+            return 1
+        default:
+            return 2
+        }
+    }
+
+    private static func supportsX64JavaFallback() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/arch")
+        process.arguments = ["-x86_64", "/usr/bin/true"]
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
         }
     }
 

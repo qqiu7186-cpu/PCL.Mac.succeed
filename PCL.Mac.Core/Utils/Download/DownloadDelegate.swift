@@ -75,6 +75,10 @@ class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
+        if let error = error as? URLError {
+            resume(task: task, with: .failure(SimpleError("下载请求失败（\(error.code.rawValue)）：\(error.localizedDescription)")))
+            return
+        }
         resume(task: task, with: .failure(error ?? DownloadError.unknownError))
     }
     

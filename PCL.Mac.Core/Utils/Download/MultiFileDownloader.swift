@@ -25,6 +25,7 @@ public class MultiFileDownloader {
     }
     
     public func start() async throws {
+        let effectiveConcurrentLimit = max(1, min(concurrentLimit, 8))
         var items: [DownloadItem] = []
         if replaceMethod == .skip {
             for item in self.items {
@@ -66,7 +67,7 @@ public class MultiFileDownloader {
         
         var nextIndex: Int = 0
         try await withThrowingTaskGroup(of: Void.self) { group in
-            let initial = min(concurrentLimit, total)
+            let initial = min(effectiveConcurrentLimit, total)
             while nextIndex < initial {
                 let item: DownloadItem = dedupedItems[nextIndex]
                 group.addTask {

@@ -22,6 +22,17 @@ extension String: URLConvertible {
 
 /// HTTP 请求工具类。
 public enum Requests {
+    private static let session: URLSession = {
+        let configuration: URLSessionConfiguration = .ephemeral
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 120
+        configuration.httpMaximumConnectionsPerHost = 4
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.urlCache = nil
+        return .init(configuration: configuration)
+    }()
+
     public enum EncodeMethod {
         case json
         case urlEncoded
@@ -103,9 +114,11 @@ public enum Requests {
         
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
+        } catch let error as URLError {
+            throw SimpleError("网络请求失败（\(error.code.rawValue)）：\(error.localizedDescription)")
         }
         guard let response = response as? HTTPURLResponse else {
             throw RequestError.badResponse

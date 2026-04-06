@@ -8,19 +8,10 @@
 import SwiftUI
 import Combine
 import Core
-import SwiftyJSON
 
 class AccountViewModel: ObservableObject {
-    @Published public private(set) var accounts: [Account] = [] {
-        didSet {
-            LauncherConfig.shared.accounts = accounts
-        }
-    }
-    @Published public private(set) var currentAccountId: UUID? {
-        didSet {
-            LauncherConfig.shared.currentAccountId = currentAccountId
-        }
-    }
+    @Published public private(set) var accounts: [Account] = []
+    @Published public private(set) var currentAccountId: UUID?
     public var currentAccount: Account? {
         if let currentAccountId {
             return accounts.first(where: { $0.id == currentAccountId })
@@ -31,6 +22,13 @@ class AccountViewModel: ObservableObject {
     public init() {
         self.accounts = LauncherConfig.shared.accounts
         self.currentAccountId = LauncherConfig.shared.currentAccountId
+    }
+
+    private func syncConfig() {
+        LauncherConfig.mutate {
+            $0.accounts = accounts
+            $0.currentAccountId = currentAccountId
+        }
     }
     
     /// 请求用户添加账号。
@@ -64,6 +62,7 @@ class AccountViewModel: ObservableObject {
     /// 切换当前账号。
     public func switchAccount(to account: Account) {
         currentAccountId = account.id
+        syncConfig()
     }
     
     /// 移除账号。
@@ -72,86 +71,21 @@ class AccountViewModel: ObservableObject {
         accounts.removeAll(where: { $0.id == account.id })
         if currentAccount == nil {
             if let firstAccount = accounts.first {
-                switchAccount(to: firstAccount)
+                currentAccountId = firstAccount.id
             } else {
                 currentAccountId = nil
             }
         }
+        syncConfig()
     }
     
     /// 获取账号皮肤数据。
     public func skinData(for account: Account) async -> Data {
-        let defaultSkin: Data = .init(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAdVBMVEUAAAAKvLwAzMwmGgokGAgrHg0zJBE/KhW3g2uzeV5SPYn///+qclmbY0mQWT8Af38AaGhVVVWUYD52SzOBUzmPXj5JJRBCHQp3QjVqQDA0JRIoKCg3Nzc/Pz9KSko6MYlBNZtGOqUDenoFiIgElZUApKQAr6/wvakZAAAAAXRSTlMAQObYZgAAAolJREFUeNrt1l1rHucZReFrj/whu5hSCCQtlOTE/f+/Jz4q9Cu0YIhLcFVpVg+FsOCVehi8jmZgWOzZz33DM4CXlum3gH95GgeAzQZVeL4gTm6Cbp4vqFkD8HwBazPY8wWbMq9utu3mNZ5fotVezbzOE3kBEFbaZuc8kb00NTMUbWJp678Xf2GV7RRtx1TDQQ6XBNvsmL2+2vHq1TftmMPIyAWujtN2cl274ua2jpVpZneXEjjo7XW1q53V9ds4ODO5xIuhvGHvfLI3aixauig415uuO2+vl9+cncfsFw25zL650fXn687jqnXuP68/X3+eV3zE7y6u9eB73MlfAcfbTf3yR8CfAX+if8S/H5/EAbAxj5LN48tULvEBOh8V1AageMTXe2YHAOwHbZxrzPkSR3+ffr8TR2JDzE/4Fj8CDgEwDsW+q+9GsR07hhg2CsALBgMo2v5wNxXnQXMeGQVW7gUAyKI2m6KDsJ8Au3++F5RZO+kKNQjQcLLWgjwUjBXLltFgWWMUUlviocBgNoxNGgMjSxiYAA7zgLFo2hgIENiDU8gQCzDOmViGFAsEuBcQSDCothhpJaDRA8E5fHqH2nTbYm5fHLo1V0u3B7DAuheoeScRYabjjjuzs17cHVaTrTXmK78m9swP34d9oK/dfeXSIH2PW/MXwPvxN/bJlxw8zlYAcEyeI6gNgA/O8P8neN8xe1IHP2gTzegjvhUDfuRygmwEs2GE4mkCDIAzm2R4yAuPsIdR9k8AvMc+3L9+2UEjo4WP0FpgP19O0MzCsqxIoMsdDBvYcQyGmO0ZJRoYCKjLJWY0BAhYwGUBCgkh8MRdOKt+ruqMwAB2OcEX94U1TPbYJP0PkyyAI1S6cSIAAAAASUVORK5CYII=")!
-        do {
-            guard let textures: Data = account.profile.property(forName: "textures") else {
-                if !(account is OfflineAccount) {
-                    warn("玩家档案中不存在 textures 属性")
-                }
-                return defaultSkin
-            }
-
-            let decodedTextures: Data
-            if let texturesString = String(data: textures, encoding: .utf8),
-               let base64Decoded = Data(base64Encoded: texturesString) {
-                decodedTextures = base64Decoded
-            } else {
-                decodedTextures = textures
-            }
-
-            let json: JSON
-            do {
-                json = try .init(data: decodedTextures)
-            } catch {
-                err("解析 textures 属性失败：原始大小=\(textures.count) 字节，解码后大小=\(decodedTextures.count) 字节，原始前缀=\(dataPrefixHex(textures))，解码前缀=\(dataPrefixHex(decodedTextures))")
-                return defaultSkin
-            }
-
-            guard let url: URL = json["textures"]["SKIN"]["url"].url else {
-                err("解析 textures 属性失败：未找到 SKIN.url，解码后前缀=\(dataPrefixHex(decodedTextures))")
-                return defaultSkin
-            }
-
-            let normalizedURL = normalizeSkinURL(url)
-            let skinData = try await Requests.get(normalizedURL).data
-            guard isValidSkinImageData(skinData) else {
-                err("获取皮肤数据失败：内容不是有效皮肤图片，URL=\(normalizedURL.absoluteString)，大小=\(skinData.count) 字节，前缀=\(dataPrefixHex(skinData))")
-                return defaultSkin
-            }
-            return skinData
-        } catch {
-            err("获取皮肤数据失败：\(error.localizedDescription)")
-            return defaultSkin
-        }
+        await SkinService.skinData(for: account)
     }
 
-    private func dataPrefixHex(_ data: Data, length: Int = 16) -> String {
-        data.prefix(length).map { String(format: "%02X", $0) }.joined()
-    }
-
-    private func normalizeSkinURL(_ url: URL) -> URL {
-        guard url.scheme?.lowercased() == "http",
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url
-        }
-        components.scheme = "https"
-        return components.url ?? url
-    }
-
-    private func isValidSkinImageData(_ data: Data) -> Bool {
-        guard !data.isEmpty else { return false }
-
-        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
-        if data.starts(with: pngSignature) {
-            return true
-        }
-
-        if let stringPrefix = String(data: data.prefix(64), encoding: .utf8)?.lowercased() {
-            if stringPrefix.contains("<html") || stringPrefix.contains("<?xml") || stringPrefix.contains("accessdenied") {
-                return false
-            }
-        }
-
-        return NSImage(data: data) != nil
+    public static func skinData(for account: Account) async -> Data {
+        await SkinService.skinData(for: account)
     }
     
     private func requestAddMicrosoftAccount() async {
@@ -200,7 +134,9 @@ class AccountViewModel: ObservableObject {
                 log("添加正版账号成功")
                 hint("账号添加成功！", type: .finish)
                 await MainActor.run {
-                    LauncherConfig.shared.hasMicrosoftAccount = true
+                    LauncherConfig.mutate {
+                        $0.hasMicrosoftAccount = true
+                    }
                     addAccount(account)
                 }
             } catch is CancellationError {
@@ -324,7 +260,9 @@ class AccountViewModel: ObservableObject {
                 userProperties: response.userProperties
             )
             await MainActor.run {
-                LauncherConfig.shared.hasMicrosoftAccount = true
+                LauncherConfig.mutate {
+                    $0.hasMicrosoftAccount = true
+                }
                 addAccount(account)
             }
             hint("第三方账号添加成功！", type: .finish)
@@ -340,6 +278,7 @@ class AccountViewModel: ObservableObject {
     
     private func addAccount(_ account: Account) {
         accounts.append(account)
-        switchAccount(to: account)
+        currentAccountId = account.id
+        syncConfig()
     }
 }

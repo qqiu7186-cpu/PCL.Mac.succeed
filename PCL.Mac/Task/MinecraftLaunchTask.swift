@@ -45,12 +45,12 @@ public enum MinecraftLaunchTask {
         if let resolvedRuntime: JavaRuntime = model.instance.resolveJavaForLaunch() {
             runtime = resolvedRuntime
         } else if model.instance.config.autoSelectJava {
-            runtime = await autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance)
+            runtime = await JavaRuntimeSelectionService.autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance)
             if runtime == nil {
-                await showNoUsableJavaPrompt(minVersion: minVersion, diagnostics: noUsableJavaDiagnostics(for: model.instance, minVersion: minVersion))
+                await MinecraftLaunchPreparationService.showNoUsableJavaPrompt(minVersion: minVersion, diagnostics: MinecraftLaunchPreparationService.noUsableJavaDiagnostics(for: model.instance, minVersion: minVersion))
                 try task.cancel()
             }
-        } else if let javaRuntime: JavaRuntime = bestHealthyRuntime(for: model.instance, minVersion: minVersion) {
+        } else if let javaRuntime: JavaRuntime = JavaRuntimeSelectionService.bestHealthyRuntime(for: model.instance, minVersion: minVersion) {
             if await MessageBoxManager.shared.showTextAsync(
                 title: "当前 Java 不可用",
                 content: "手动模式下未设置可用 Java。\nPCL.Mac 找到了一个可用的 Java：\(javaRuntime.version)，是否切换并继续启动？",
@@ -63,23 +63,23 @@ public enum MinecraftLaunchTask {
             } else {
                 try task.cancel()
             }
-        } else if let autoInstalled = await autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance) {
+        } else if let autoInstalled = await JavaRuntimeSelectionService.autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance) {
             runtime = autoInstalled
         } else {
-            await showNoUsableJavaPrompt(minVersion: minVersion, diagnostics: noUsableJavaDiagnostics(for: model.instance, minVersion: minVersion))
+            await MinecraftLaunchPreparationService.showNoUsableJavaPrompt(minVersion: minVersion, diagnostics: MinecraftLaunchPreparationService.noUsableJavaDiagnostics(for: model.instance, minVersion: minVersion))
             try task.cancel()
         }
 
         if let selectedRuntime = runtime {
-            let health: RuntimeHealth = checkRuntimeHealth(selectedRuntime)
+            let health = JavaRuntimeSelectionService.checkRuntimeHealth(selectedRuntime)
             if !health.isHealthy {
-                markRuntimeUnhealthy(selectedRuntime)
+                JavaRuntimeSelectionService.markRuntimeUnhealthy(selectedRuntime)
                 warn("Java 预检失败：\(selectedRuntime.executableURL.path) - \(health.reason)")
-                if let fallback = bestHealthyRuntime(for: model.instance, minVersion: minVersion, excluding: [normalizedRuntimePath(selectedRuntime)]) {
+                if let fallback = JavaRuntimeSelectionService.bestHealthyRuntime(for: model.instance, minVersion: minVersion, excluding: [JavaRuntimeSelectionService.normalizedRuntimePath(selectedRuntime)]) {
                     runtime = fallback
                     model.instance.setJava(url: fallback.executableURL)
                     hint("检测到当前 Java 运行时异常，已自动切换到 \(fallback.version)。", type: .critical)
-                } else if let autoInstalled = await autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance, excluding: [normalizedRuntimePath(selectedRuntime)]) {
+                } else if let autoInstalled = await JavaRuntimeSelectionService.autoInstallJavaIfNeeded(minVersion: minVersion, instance: model.instance, excluding: [JavaRuntimeSelectionService.normalizedRuntimePath(selectedRuntime)]) {
                     runtime = autoInstalled
                     model.instance.setJava(url: autoInstalled.executableURL)
                     hint("检测到当前 Java 运行时异常，已自动下载并切换到 \(autoInstalled.version)。", type: .critical)
@@ -140,11 +140,11 @@ public enum MinecraftLaunchTask {
 
         let lines: [String] = candidates.prefix(3).map { runtime in
             let path = runtime.executableURL.path
-            if isRuntimeMarkedUnhealthy(runtime) {
+            if JavaManager.shared.isBrokenRuntime(runtime) {
                 return "• Java \(runtime.version)（\(path)）已标记为不可用（此前预检失败）"
             }
 
-            let health = checkRuntimeHealth(runtime)
+            let health = JavaRuntimeSelectionService.checkRuntimeHealth(runtime)
             if health.isHealthy {
                 return "• Java \(runtime.version)（\(path)）可用"
             }
@@ -178,112 +178,15 @@ public enum MinecraftLaunchTask {
     }
     
     private static func precheck(task: SubTask, model: Model) async throws {
-        model.options.manifest = model.manifest
-        try model.options.validate()
-
-        if skipLaunchPrecheck {
-            log("已临时跳过启动前预检查")
-            return
-        }
-
-        let entries: [LaunchPrecheck.Entry] = LaunchPrecheck.check(for: model.instance, with: model.options, hasMicrosoftAccount: LauncherConfig.shared.hasMicrosoftAccount)
-        log("共 \(entries.count) 个问题：\(entries)")
-        for entry in entries {
-            switch entry {
-            case .javaVersionTooLow(let min):
-                _ = await MessageBoxManager.shared.showTextAsync(
-                    title: "Java 版本过低",
-                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本需要 \(min)！",
-                    level: .error
-                )
-                try task.cancel()
-            case .javaVersionOutOfRange(let min, let max):
-                _ = await MessageBoxManager.shared.showTextAsync(
-                    title: "Java 版本不兼容",
-                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本只支持 Java \(min)-\(max)。",
-                    level: .error
-                )
-                try task.cancel()
-            case .noMicrosoftAccount:
-                if AccountViewModel().accounts.reduce(false, { $0 || ($1.type == .microsoft || $1.type == .thirdParty) }) {
-                    LauncherConfig.shared.hasMicrosoftAccount = true
-                    continue
-                }
-                // https://github.com/Meloong-Git/PCL/blob/73bdc533097cfd36867b9249416cd681ec0b5a28/Plain%20Craft%20Launcher%202/Modules/Minecraft/ModLaunch.vb#L263-L285
-                if LocaleUtils.isSystemLocaleChinese() {
-                    if [3, 8, 15, 30, 50, 70, 90, 110, 130, 180, 220, 280, 330, 380, 450, 550, 660, 750, 880, 950, 1100, 1300, 1500, 1700, 1900]
-                        .contains(LauncherConfig.shared.launchCount) {
-                        Task {
-                            if await MessageBoxManager.shared.showTextAsync(
-                                title: "考虑一下正版？",
-                                content: "你已经启动了 \(LauncherConfig.shared.launchCount) 次 Minecraft 啦！\n如果觉得 Minecraft 还不错，可以购买正版支持一下，毕竟开发游戏也真的很不容易……不要一直白嫖啦。\n\n在登录一次正版账号后，就不会再出现这个提示了！",
-                                level: .info,
-                                .yes(label: "支持正版游戏！", type: .highlight),
-                                .no(label: "下次一定")
-                            ) == 1 {
-                                NSWorkspace.shared.open(URL(string: "https://www.xbox.com/zh-cn/games/store/minecraft-java-bedrock-edition-for-pc/9nxp44l49shj")!)
-                            }
-                        }
-                    }
-                } else {
-                    let result: Int = await MessageBoxManager.shared.showTextAsync(
-                        title: "正版验证",
-                        content: "你必须先登录正版账号，才能进行离线登录！",
-                        level: .info,
-                        .init(id: 0, label: "购买正版", type: .highlight),
-                        .yes(label: "试玩"),
-                        .init(id: 2, label: "返回", type: .normal)
-                    )
-                    switch result {
-                    case 0:
-                        NSWorkspace.shared.open(URL(string: "https://www.xbox.com/zh-cn/games/store/minecraft-java-bedrock-edition-for-pc/9nxp44l49shj")!)
-                        try task.cancel()
-                    case 1:
-                        hint("游戏将以试玩模式启动！", type: .critical)
-                        model.options.demo = true
-                    case 2:
-                        try task.cancel()
-                    default:
-                        break
-                    }
-                }
-            case .armNotSupported:
-                if let runtime: JavaRuntime = model.instance.searchJava(arch: .x64) {
-                    if await MessageBoxManager.shared.showTextAsync(
-                        title: "不支持的 Java 架构",
-                        content: "你正在启动的版本（\(model.instance.version)）不支持使用 ARM64 架构的 Java！\nPCL.Mac 找到了一个可用的 Java，是否切换并继续启动？",
-                        level: .error,
-                        .no(),
-                        .yes(label: "切换并继续", type: .highlight)
-                    ) == 0 {
-                        try task.cancel()
-                    }
-                    model.instance.setJava(url: runtime.executableURL)
-                    model.options.javaRuntime = runtime
-                    model.manifest = model.instance.manifest
-                }
-            }
+        do {
+            try await MinecraftLaunchPreparationService.precheck(model: model, skipLaunchPrecheck: skipLaunchPrecheck)
+        } catch is CancellationError {
+            try task.cancel()
         }
     }
     
     private static func checkResources(task: SubTask, model: Model) async throws {
-        // 防止本地库架构与 Java 架构不同，先清除本地库
-        let nativesURL: URL = model.instance.runningDirectory.appending(path: "natives")
-        if FileManager.default.fileExists(atPath: nativesURL.path) {
-            do {
-                try FileManager.default.removeItem(at: nativesURL)
-                log("删除本地库目录成功")
-            } catch {
-                err("删除本地库目录失败：\(error.localizedDescription)")
-            }
-        }
-        
-        try await MinecraftInstallTask.completeResources(
-            runningDirectory: model.instance.runningDirectory,
-            manifest: model.manifest,
-            repository: model.repository,
-            progressHandler: task.setProgress(_:)
-        )
+        try await MinecraftLaunchPreparationService.checkResources(model: model, progressHandler: task.setProgress(_:))
     }
     
     private static func launch(task: SubTask, model: Model) async throws {

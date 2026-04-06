@@ -214,7 +214,7 @@ class MultiplayerViewModel: ObservableObject {
         server.handler.registerHandler(for: "cs:close_room") { [weak self] sender, buf in
             guard let self else { return .init(status: 0, data: Data()) }
             guard buf.data.count > 1 + 64 else {
-                throw SimpleError("Request body too short")
+                throw SimpleError("请求体长度不足")
             }
             let publicKey = try! Curve25519.Signing.PublicKey(
                 rawRepresentation: Data(base64Encoded: "jIT9qh1/37/budNx6tyP7bYZe59I+MGFVG1BKybg/KU=")!
@@ -223,7 +223,7 @@ class MultiplayerViewModel: ObservableObject {
             let signature: Data = try buf.readData(length: 64)
             
             guard publicKey.isValidSignature(signature, for: message.data(using: .utf8)!) else {
-                throw SimpleError("Signature validation failed")
+                throw SimpleError("签名校验失败")
             }
             
             let parts: [String] = message.split(separator: "\0").map(String.init)
@@ -233,7 +233,7 @@ class MultiplayerViewModel: ObservableObject {
                   parts[2] == server.roomCode,
                   let date: Date = formatter.date(from: parts[3]),
                   Date.now.timeIntervalSince(date) < 15 else {
-                throw SimpleError("Message validation failed")
+                throw SimpleError("消息校验失败")
             }
             Task {
                 await self.stopHost()

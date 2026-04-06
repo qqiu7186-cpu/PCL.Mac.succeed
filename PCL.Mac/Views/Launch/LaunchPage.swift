@@ -69,7 +69,7 @@ struct LaunchPage: View {
                                 title: "普通弹窗",
                                 content: "Hello, world!",
                                 .init(id: 0, label: "hint（点击这个按钮不会关闭弹窗！）", type: .normal) {
-                                    hint("awa!", type: .finish)
+                                    hint("操作成功！", type: .finish)
                                 },
                                 .yes(type: .highlight),
                             )

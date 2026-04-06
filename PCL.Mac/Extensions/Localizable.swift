@@ -50,6 +50,7 @@ extension AccountType: Localizable {
         switch self {
         case .offline: "离线账号"
         case .microsoft: "正版账号"
+        case .thirdParty: "第三方账号"
         }
     }
 }

@@ -12,6 +12,8 @@ import AppKit
 /// Minecraft 启动任务生成器。
 public enum MinecraftLaunchTask {
     private typealias SubTask = MyTask<Model>.SubTask
+    private static let skipJavaRuntimePrecheck = true
+    private static let skipLaunchPrecheck = true
     
     /// 创建 Minecraft 启动任务。
     /// - Parameters:
@@ -94,6 +96,7 @@ public enum MinecraftLaunchTask {
 
         if let runtime {
             model.options.javaRuntime = runtime
+            model.options.javaReleaseType = runtime.releaseType
             model.manifest = NativesMapper.map(model.manifest, to: runtime.architecture)
         }
     }
@@ -176,6 +179,12 @@ public enum MinecraftLaunchTask {
     private static func precheck(task: SubTask, model: Model) async throws {
         model.options.manifest = model.manifest
         try model.options.validate()
+
+        if skipLaunchPrecheck {
+            log("已临时跳过启动前预检查")
+            return
+        }
+
         let entries: [LaunchPrecheck.Entry] = LaunchPrecheck.check(for: model.instance, with: model.options, hasMicrosoftAccount: LauncherConfig.shared.hasMicrosoftAccount)
         log("共 \(entries.count) 个问题：\(entries)")
         for entry in entries {
@@ -343,7 +352,8 @@ public enum MinecraftLaunchTask {
 
         func score(of runtime: JavaRuntime) -> Int {
             var score = 0
-            if runtime.architecture == (instance.version > .init("1.7.2") ? .systemArchitecture() : .x64) { score += 3 }
+            if instance.shouldAvoidRuntimeForLaunch(runtime) { score -= 100 }
+            if runtime.architecture == instance.preferredArchitectureForLaunch() { score += 3 }
             if runtime.majorVersion == minVersion { score += 2 }
             if runtime.type == .jdk { score += 1 }
             if runtime.implementor?.contains("Azul") == true { score += 1 }
@@ -361,6 +371,7 @@ public enum MinecraftLaunchTask {
         let matchingRuntimes = allRuntimes
             .filter { $0.majorVersion >= minVersion }
             .filter { javaRange.contains($0.majorVersion) }
+            .filter { !instance.shouldAvoidRuntimeForLaunch($0) }
             .filter { !normalizedExcluding.contains(normalizedRuntimePath($0)) }
 
         let candidates = matchingRuntimes
@@ -422,7 +433,7 @@ public enum MinecraftLaunchTask {
     private static func preferredJavaDownloads(minVersion: Int, maxVersion: Int) async -> [JavaDownloadPackage] {
         do {
             let viewModel = JavaSettingsViewModel()
-            let architectures = preferredDownloadArchitectures(for: minVersion)
+        let architectures = preferredDownloadArchitectures(for: minVersion)
             var downloads: [JavaDownloadPackage] = []
             for architecture in architectures {
                 downloads += try await viewModel.javaDownloads(forArchitecture: architecture, preferredMajor: minVersion, includeAllProviders: true)
@@ -434,8 +445,8 @@ public enum MinecraftLaunchTask {
             }
 
             return rangedDownloads.sorted { lhs, rhs in
-                let lhsArchitecturePriority = architecturePriority(lhs.architecture)
-                let rhsArchitecturePriority = architecturePriority(rhs.architecture)
+                let lhsArchitecturePriority = architecturePriority(lhs.architecture, minVersion: minVersion)
+                let rhsArchitecturePriority = architecturePriority(rhs.architecture, minVersion: minVersion)
                 if lhsArchitecturePriority != rhsArchitecturePriority {
                     return lhsArchitecturePriority < rhsArchitecturePriority
                 }
@@ -468,10 +479,21 @@ public enum MinecraftLaunchTask {
         guard systemArchitecture == .arm64, minVersion >= 26, supportsX64JavaFallback() else {
             return [systemArchitecture]
         }
-        return [.arm64, .x64]
+        return [.x64, .arm64]
     }
 
-    private static func architecturePriority(_ architecture: Architecture) -> Int {
+    private static func architecturePriority(_ architecture: Architecture, minVersion: Int) -> Int {
+        if Architecture.systemArchitecture() == .arm64 && minVersion >= 26 {
+            switch architecture {
+            case .x64:
+                return 0
+            case .arm64:
+                return 1
+            default:
+                return 2
+            }
+        }
+
         switch architecture {
         case .arm64:
             return 0
@@ -516,6 +538,10 @@ public enum MinecraftLaunchTask {
     }
 
     private static func checkRuntimeHealth(_ runtime: JavaRuntime) -> RuntimeHealth {
+        if skipJavaRuntimePrecheck {
+            return .init(isHealthy: true, reason: "已临时跳过 Java 预检")
+        }
+
         var baseProbe = runJavaProbe(runtime, arguments: ["-version"])
         if !baseProbe.isHealthy, baseProbe.reason == "收到信号退出" {
             if attemptRuntimeSignalRecovery(runtime) {

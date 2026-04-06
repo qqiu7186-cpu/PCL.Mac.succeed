@@ -72,7 +72,8 @@ public class MinecraftInstance: Equatable {
 
         func getScore(of runtime: JavaRuntime) -> Int {
             var score: Int = 0
-            if runtime.architecture == (version > .init("1.7.2") ? .systemArchitecture() : .x64) { score += 3 }
+            if shouldAvoidRuntimeForLaunch(runtime) { score -= 100 }
+            if runtime.architecture == preferredArchitectureForLaunch() { score += 3 }
             if runtime.majorVersion == manifest.requiredJavaMajorVersion(for: version) { score += 2 }
             if runtime.type == .jdk { score += 1 }
             if runtime.implementor?.contains("Azul") == true { score += 1 }
@@ -83,6 +84,7 @@ public class MinecraftInstance: Equatable {
             .filter({ $0.architecture == (arch ?? $0.architecture) })
             .filter({ $0.majorVersion >= manifest.requiredJavaMajorVersion(for: version) })
             .filter({ javaRange.contains($0.majorVersion) })
+            .filter({ !shouldAvoidRuntimeForLaunch($0) })
             .max(by: { getScore(of: $0) < getScore(of: $1) }) {
             return runtime
         }
@@ -123,10 +125,21 @@ public class MinecraftInstance: Equatable {
             return runtime
         }
 
-        guard let runtime: JavaRuntime = javaRuntime(), runtime.majorVersion >= minVersion, javaRange.contains(runtime.majorVersion) else {
+        guard let runtime: JavaRuntime = javaRuntime(), runtime.majorVersion >= minVersion, javaRange.contains(runtime.majorVersion), !shouldAvoidRuntimeForLaunch(runtime) else {
             return nil
         }
         return runtime
+    }
+
+    public func preferredArchitectureForLaunch() -> Architecture {
+        if Architecture.systemArchitecture() == .arm64 && manifest.requiredJavaMajorVersion(for: version) >= 26 {
+            return .x64
+        }
+        return version > .init("1.7.2") ? .systemArchitecture() : .x64
+    }
+
+    public func shouldAvoidRuntimeForLaunch(_ runtime: JavaRuntime) -> Bool {
+        Architecture.systemArchitecture() == .arm64 && manifest.requiredJavaMajorVersion(for: version) >= 26 && runtime.architecture == .arm64
     }
 
     public func previewResolvedJavaForLaunch() -> JavaRuntime? {

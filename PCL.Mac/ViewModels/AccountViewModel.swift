@@ -85,16 +85,69 @@ class AccountViewModel: ObservableObject {
                 }
                 return defaultSkin
             }
-            let json: JSON = try .init(data: textures)
-            guard let url: URL = json["textures"]["SKIN"]["url"].url else {
-                err("解析 textures 属性失败")
+
+            let decodedTextures: Data
+            if let texturesString = String(data: textures, encoding: .utf8),
+               let base64Decoded = Data(base64Encoded: texturesString) {
+                decodedTextures = base64Decoded
+            } else {
+                decodedTextures = textures
+            }
+
+            let json: JSON
+            do {
+                json = try .init(data: decodedTextures)
+            } catch {
+                err("解析 textures 属性失败：原始大小=\(textures.count) 字节，解码后大小=\(decodedTextures.count) 字节，原始前缀=\(dataPrefixHex(textures))，解码前缀=\(dataPrefixHex(decodedTextures))")
                 return defaultSkin
             }
-            return try await Requests.get(url).data
+
+            guard let url: URL = json["textures"]["SKIN"]["url"].url else {
+                err("解析 textures 属性失败：未找到 SKIN.url，解码后前缀=\(dataPrefixHex(decodedTextures))")
+                return defaultSkin
+            }
+
+            let normalizedURL = normalizeSkinURL(url)
+            let skinData = try await Requests.get(normalizedURL).data
+            guard isValidSkinImageData(skinData) else {
+                err("获取皮肤数据失败：内容不是有效皮肤图片，URL=\(normalizedURL.absoluteString)，大小=\(skinData.count) 字节，前缀=\(dataPrefixHex(skinData))")
+                return defaultSkin
+            }
+            return skinData
         } catch {
             err("获取皮肤数据失败：\(error.localizedDescription)")
             return defaultSkin
         }
+    }
+
+    private func dataPrefixHex(_ data: Data, length: Int = 16) -> String {
+        data.prefix(length).map { String(format: "%02X", $0) }.joined()
+    }
+
+    private func normalizeSkinURL(_ url: URL) -> URL {
+        guard url.scheme?.lowercased() == "http",
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+        components.scheme = "https"
+        return components.url ?? url
+    }
+
+    private func isValidSkinImageData(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return false }
+
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
+        if data.starts(with: pngSignature) {
+            return true
+        }
+
+        if let stringPrefix = String(data: data.prefix(64), encoding: .utf8)?.lowercased() {
+            if stringPrefix.contains("<html") || stringPrefix.contains("<?xml") || stringPrefix.contains("accessdenied") {
+                return false
+            }
+        }
+
+        return NSImage(data: data) != nil
     }
     
     private func requestAddMicrosoftAccount() async {

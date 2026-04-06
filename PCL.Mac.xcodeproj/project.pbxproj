@@ -57,6 +57,15 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		77646D9C2F83C3D000E60F61 /* Exceptions for "Configs" folder in "PCL.Mac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Base.xcconfig,
+				Debug.xcconfig,
+				Release.xcconfig,
+			);
+			target = ECC26BC22EBEDD67002B7E3E /* PCL.Mac */;
+		};
 		EC996CF72EBEEF100094E524 /* Exceptions for "PCL.Mac" folder in "PCL.Mac" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -92,6 +101,9 @@
 		};
 		ECE3EC022F1B8DB200754684 /* Configs */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				77646D9C2F83C3D000E60F61 /* Exceptions for "Configs" folder in "PCL.Mac" target */,
+			);
 			path = Configs;
 			sourceTree = "<group>";
 		};
@@ -261,7 +273,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					EC71A32C2EC034AA006E496F = {
 						CreatedOnToolsVersion = 16.4;
@@ -541,6 +553,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -598,6 +611,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;

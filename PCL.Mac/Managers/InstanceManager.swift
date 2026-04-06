@@ -14,15 +14,23 @@ class InstanceManager: ObservableObject {
     @Published public var currentRepository: MinecraftRepository?
     @Published public var currentInstance: MinecraftInstance?
     @Published public var reloadErrorMessage: String?
+
+    private func syncConfig() {
+        LauncherConfig.mutate {
+            $0.minecraftRepositories = repositories
+            $0.currentRepository = currentRepository.flatMap { repositories.firstIndex(of: $0) }
+            $0.currentInstance = currentInstance?.name
+        }
+    }
     
     private init() {
         if LauncherConfig.shared.minecraftRepositories.isEmpty {
             let defaultDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: "Library/Application Support/minecraft")
-            LauncherConfig.shared.minecraftRepositories.append(
-                .init(name: "默认目录", url: defaultDirectory)
-            )
-            LauncherConfig.shared.currentRepository = 0
+            LauncherConfig.mutate {
+                $0.minecraftRepositories.append(.init(name: "默认目录", url: defaultDirectory))
+                $0.currentRepository = 0
+            }
         }
         self.repositories = LauncherConfig.shared.minecraftRepositories
         if let currentRepository: Int = LauncherConfig.shared.currentRepository {
@@ -39,7 +47,7 @@ class InstanceManager: ObservableObject {
             } else if let currentInstance = currentRepository?.instances?.first {
                 log("配置文件中的当前实例失效，切换到当前第一个可用的实例")
                 self.currentInstance = currentInstance
-                LauncherConfig.shared.currentInstance = currentInstance.name
+                syncConfig()
             } else {
                 warn("配置文件中的当前实例失效，且当前没有可用实例")
             }
@@ -69,7 +77,7 @@ class InstanceManager: ObservableObject {
             return
         }
         self.currentInstance = instance
-        LauncherConfig.shared.currentInstance = instance.name
+        syncConfig()
         if currentRepository != repository {
             switchRepository(to: repository, alsoSwitchInstance: false)
         }
@@ -114,28 +122,29 @@ class InstanceManager: ObservableObject {
     /// 切换当前仓库。
     /// - Parameter repository: 目标仓库。
     public func switchRepository(to repository: MinecraftRepository, alsoSwitchInstance: Bool = true) {
-        guard let index: Int = repositories.firstIndex(of: repository) else {
+        guard repositories.firstIndex(of: repository) != nil else {
             err("试图切换到 \(repository.url) 仓库，但 repositories 中不存在它")
             return
         }
         self.currentRepository = repository
-        LauncherConfig.shared.currentRepository = index
         if alsoSwitchInstance {
             if let instance = repository.instances?.first {
                 switchInstance(to: instance, repository)
             } else {
                 self.currentInstance = nil
-                LauncherConfig.shared.currentInstance = nil
+                syncConfig()
             }
+        } else {
+            syncConfig()
         }
     }
     
     public func removeRepository(_ repository: MinecraftRepository) {
         repositories.removeAll { $0.url == repository.url }
-        LauncherConfig.shared.minecraftRepositories = repositories
         if currentRepository?.url == repository.url {
             currentRepository = nil
         }
+        syncConfig()
     }
     
     /// 添加游戏目录
@@ -145,7 +154,7 @@ class InstanceManager: ObservableObject {
     public func addRepository(name: String, url: URL) {
         let repository: MinecraftRepository = .init(name: name, url: url)
         repositories.append(repository)
-        LauncherConfig.shared.minecraftRepositories.append(repository)
+        syncConfig()
         switchRepository(to: repository)
     }
     

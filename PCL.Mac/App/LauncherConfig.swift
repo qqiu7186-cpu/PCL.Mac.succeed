@@ -88,6 +88,11 @@ class LauncherConfig: Codable {
         let data: Data = try JSONEncoder.shared.encode(config)
         try data.write(to: url)
     }
+
+    @discardableResult
+    public static func mutate<T>(_ changes: (LauncherConfig) throws -> T) rethrows -> T {
+        try changes(shared)
+    }
     
     private enum CodingKeys: String, CodingKey {
         case minecraftRepositories

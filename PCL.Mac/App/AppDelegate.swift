@@ -103,7 +103,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 .init(id: 2, label: "开始使用", type: .highlight)
             ) { _ in
-                LauncherConfig.shared.hasEnteredLauncher = true
+                LauncherConfig.mutate {
+                    $0.hasEnteredLauncher = true
+                }
             }
         }
         UpdateService.shared.runInteractiveUpdateFlow()

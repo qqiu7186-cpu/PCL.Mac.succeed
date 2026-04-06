@@ -221,7 +221,9 @@ struct MultiplayerPage: View {
             AppRouter.shared.setRoot(.launch)
             throw SimpleError("用户未同意免责声明")
         }
-        LauncherConfig.shared.multiplayerDisclaimerAgreed = true
+        LauncherConfig.mutate {
+            $0.multiplayerDisclaimerAgreed = true
+        }
     }
 }
 

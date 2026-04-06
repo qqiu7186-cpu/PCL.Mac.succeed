@@ -16,7 +16,9 @@ struct MultiplayerSettingsPage: View {
                 configLine(label: "自定义节点") {
                     MyTextField(text: $customPeer)
                         .onChange(of: customPeer) { newValue in
-                            LauncherConfig.shared.multiplayerCustomPeer = newValue
+                            LauncherConfig.mutate {
+                                $0.multiplayerCustomPeer = newValue
+                            }
                         }
                 }
                 

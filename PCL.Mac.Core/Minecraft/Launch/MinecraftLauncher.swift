@@ -48,9 +48,9 @@ public class MinecraftLauncher {
             "clientid": "",
             "auth_xuid": "",
             "xuid": "",
-            "user_type": "msa",
+            "user_type": options.userType,
             "version_type": "PCL.Mac",
-            "user_properties": "{}"
+            "user_properties": options.userProperties
         ]
     }
     
@@ -76,7 +76,7 @@ public class MinecraftLauncher {
         process.standardOutput = pipe
         process.standardError = pipe
         
-        log("正在使用以下参数启动 Minecraft：\(arguments.map { $0 == options.accessToken ? "🥚" : $0 })")
+        log("正在使用以下参数启动 Minecraft：\(Self.redactedLaunchArguments(arguments, accessToken: options.accessToken))")
         try process.run()
         Self.gameLogQueue.async {
             FileManager.default.createFile(atPath: self.logURL.path, contents: nil)
@@ -116,6 +116,13 @@ public class MinecraftLauncher {
         arguments = arguments.map(sanitizeUnresolvedPlaceholders)
         arguments = removeEmptyOptionalArguments(arguments)
 
+        if let thirdPartyAuth = options.thirdPartyAuth {
+            let metadataData = try? JSONEncoder.shared.encode(thirdPartyAuth.metadata)
+            let encodedMetadata = metadataData?.base64EncodedString() ?? ""
+            arguments.insert("-Dauthlibinjector.yggdrasil.prefetched=\(encodedMetadata)", at: 0)
+            arguments.insert("-javaagent:\(thirdPartyAuth.injectorURL.path)=\(thirdPartyAuth.apiRoot.absoluteString)", at: 0)
+        }
+
         if options.javaFallbackPolicy.sanitizeJvmArguments {
             arguments = sanitizeJVMArguments(arguments, options: options)
         }
@@ -127,6 +134,33 @@ public class MinecraftLauncher {
             effectiveMinMemoryMB: tunedMinMemory
         )
         return arguments
+    }
+
+    private static func redactedLaunchArguments(_ arguments: [String], accessToken: String) -> [String] {
+        var redacted: [String] = []
+        var iterator = arguments.makeIterator()
+
+        while let argument = iterator.next() {
+            switch argument {
+            case "-cp", "-classpath":
+                let classpath = iterator.next() ?? ""
+                let entryCount = classpath.isEmpty ? 0 : classpath.split(separator: ":").count
+                redacted.append(argument)
+                redacted.append("<已隐藏 classpath，共 \(entryCount) 项>")
+            case "--accessToken":
+                _ = iterator.next()
+                redacted.append(argument)
+                redacted.append("<已隐藏>")
+            default:
+                if argument == accessToken {
+                    redacted.append("<已隐藏>")
+                } else {
+                    redacted.append(argument)
+                }
+            }
+        }
+
+        return redacted
     }
     
     private func buildClasspath() -> String {

@@ -8,6 +8,20 @@
 import Foundation
 
 public struct LaunchOptions {
+    public struct ThirdPartyAuthContext: Codable {
+        public let apiRoot: URL
+        public let serverName: String
+        public let metadata: YggdrasilAuthService.ServerMetadata
+        public let injectorURL: URL
+
+        public init(apiRoot: URL, serverName: String, metadata: YggdrasilAuthService.ServerMetadata, injectorURL: URL) {
+            self.apiRoot = apiRoot
+            self.serverName = serverName
+            self.metadata = metadata
+            self.injectorURL = injectorURL
+        }
+    }
+
     public struct JavaFallbackPolicy: Codable {
         public var enabled: Bool = true
         public var preferredReleaseOrder: [JavaRuntime.JavaReleaseType] = [.stableLTS, .stable, .earlyAccess]
@@ -29,6 +43,9 @@ public struct LaunchOptions {
     public var demo: Bool = false
     public var javaReleaseType: JavaRuntime.JavaReleaseType?
     public var javaFallbackPolicy: JavaFallbackPolicy = .init()
+    public var userType: String = "msa"
+    public var userProperties: String = "{}"
+    public var thirdPartyAuth: ThirdPartyAuthContext?
     
     public func validate() throws {
         if profile == nil || accessToken == nil { throw LaunchError.missingAccount }

@@ -347,9 +347,9 @@ class MinecraftLaunchManager: ObservableObject {
             "clientid": "",
             "auth_xuid": "",
             "xuid": "",
-            "user_type": "msa",
+            "user_type": options.userType,
             "version_type": "PCL.Mac",
-            "user_properties": "{}",
+            "user_properties": options.userProperties,
             "classpath": classpath
         ]
     }

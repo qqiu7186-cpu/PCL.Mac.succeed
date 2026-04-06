@@ -41,6 +41,7 @@ class AccountViewModel: ObservableObject {
                 title: "选择账号类型",
                 items: [
                     .init(image: "IconMicrosoftAccount", imageSize: 32, name: "正版账号", description: nil),
+                    .init(image: "IconMicrosoftAccount", imageSize: 32, name: "第三方账号", description: "Authlib-Injector / 外置登录"),
                     .init(image: "IconOfflineAccount", imageSize: 32, name: "离线账号", description: nil)
                 ]
             ) else {
@@ -50,6 +51,9 @@ class AccountViewModel: ObservableObject {
             if idx == 0 {
                 log("用户选择了添加正版账号")
                 await requestAddMicrosoftAccount()
+            } else if idx == 1 {
+                log("用户选择了添加第三方账号")
+                await requestAddThirdPartyAccount()
             } else {
                 log("用户选择了添加离线账号")
                 await requestAddOfflineAccount()
@@ -287,6 +291,50 @@ class AccountViewModel: ObservableObject {
         }
         await MainActor.run {
             addAccount(OfflineAccount(name: playerName, uuid: UUIDUtils.uuid(ofOfflinePlayer: playerName)))
+        }
+    }
+
+    private func requestAddThirdPartyAccount() async {
+        guard let rawServer = await MessageBoxManager.shared.showInputAsync(title: "输入验证服务器地址", placeholder: "例如 littleskin.cn/api/yggdrasil")?.trimmingCharacters(in: .whitespacesAndNewlines), !rawServer.isEmpty else {
+            log("用户取消了第三方账号添加（服务器地址）")
+            return
+        }
+        guard let accountName = await MessageBoxManager.shared.showInputAsync(title: "输入第三方账号", placeholder: "邮箱或用户名")?.trimmingCharacters(in: .whitespacesAndNewlines), !accountName.isEmpty else {
+            log("用户取消了第三方账号添加（账号）")
+            return
+        }
+        guard let password = await MessageBoxManager.shared.showSecureInputAsync(title: "输入第三方账号密码")?.trimmingCharacters(in: .whitespacesAndNewlines), !password.isEmpty else {
+            log("用户取消了第三方账号添加（密码）")
+            return
+        }
+
+        do {
+            let apiRoot = try await YggdrasilAuthService.resolveAPIURL(from: rawServer)
+            let service = YggdrasilAuthService(apiRoot: apiRoot)
+            let metadata = try await service.fetchMetadata()
+            let response = try await service.authenticate(username: accountName, password: password)
+            let serverName = metadata.meta?.serverName ?? apiRoot.host ?? apiRoot.absoluteString
+            let account = ThirdPartyAccount(
+                profile: response.profile,
+                apiRoot: apiRoot,
+                serverName: serverName,
+                accountName: accountName,
+                accessToken: response.accessToken,
+                clientToken: response.clientToken,
+                userProperties: response.userProperties
+            )
+            await MainActor.run {
+                LauncherConfig.shared.hasMicrosoftAccount = true
+                addAccount(account)
+            }
+            hint("第三方账号添加成功！", type: .finish)
+        } catch {
+            err("添加第三方账号失败：\(error.localizedDescription)")
+            MessageBoxManager.shared.showText(
+                title: "添加第三方账号失败",
+                content: error.localizedDescription,
+                level: .error
+            )
         }
     }
     

@@ -87,6 +87,24 @@ class MessageBoxManager: ObservableObject {
         }
         return text
     }
+
+    public func showSecureInputAsync(
+        title: String,
+        initialContent: String? = nil,
+        placeholder: String? = nil
+    ) async -> String? {
+        let result: MessageBoxResult = await showAsync(
+            title: title,
+            content: .secureInput(initialContent: initialContent, placeholder: placeholder),
+            level: .info,
+            buttons: [.init(id: MessageBoxManager.cancelButtonID, label: "取消", type: .normal), .init(id: MessageBoxManager.okButtonID, label: "确定", type: .highlight)]
+        )
+        guard case .input(let text) = result else {
+            warn("期望 result 类型（input）与实际类型（\(result)）不匹配")
+            return nil
+        }
+        return text
+    }
     
     /// 关闭当前模态框。
     /// - Parameter result: 附带的结果。

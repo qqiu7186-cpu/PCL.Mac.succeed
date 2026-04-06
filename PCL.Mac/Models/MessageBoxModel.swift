@@ -18,6 +18,7 @@ struct MessageBoxModel: Equatable, Identifiable {
         case text(text: String)
         case list(items: [ListItem])
         case input(initialContent: String?, placeholder: String?)
+        case secureInput(initialContent: String?, placeholder: String?)
     }
     
     public enum Level {

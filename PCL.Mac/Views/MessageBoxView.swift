@@ -51,6 +51,9 @@ struct MessageBoxView: View {
             if case .input(let initialContent, _) = model.content, let initialContent {
                 inputText = initialContent
             }
+            if case .secureInput(let initialContent, _) = model.content, let initialContent {
+                inputText = initialContent
+            }
         }
     }
     
@@ -74,6 +77,19 @@ struct MessageBoxView: View {
                 .frame(maxHeight: 240)
             case .input(_, let placeholder):
                 MyTextField(text: $inputText, placeholder: placeholder ?? "")
+            case .secureInput(_, let placeholder):
+                SecureField(placeholder ?? "", text: $inputText)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.color1.opacity(0.08), lineWidth: 1)
+                    )
             }
         }
     }
@@ -90,7 +106,7 @@ struct MessageBoxView: View {
             } else {
                 MessageBoxManager.shared.onButtonTap(button)
             }
-        case .input(_, _):
+        case .input(_, _), .secureInput(_, _):
             if button.id == MessageBoxManager.cancelButtonID { // 取消
                 MessageBoxManager.shared.onInputFinished(text: nil)
             } else if button.id == MessageBoxManager.okButtonID { // 确定

@@ -32,8 +32,8 @@ class AppWindow: NSWindow {
                 .environmentObject(InstanceListViewModel())
                 .environmentObject(MultiplayerViewModel())
         )
-        
-        self.setFrameAutosaveName("AppWindow")
+
+        self.isRestorable = false
         self.center()
     }
     

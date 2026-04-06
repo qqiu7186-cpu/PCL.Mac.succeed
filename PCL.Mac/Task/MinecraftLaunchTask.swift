@@ -174,6 +174,7 @@ public enum MinecraftLaunchTask {
             }
         }
         model.options.accessToken = model.account.accessToken()
+        try await model.account.configureLaunchOptions(&model.options)
     }
     
     private static func precheck(task: SubTask, model: Model) async throws {
@@ -204,7 +205,7 @@ public enum MinecraftLaunchTask {
                 )
                 try task.cancel()
             case .noMicrosoftAccount:
-                if AccountViewModel().accounts.reduce(false, { $0 || ($1.type == .microsoft) }) {
+                if AccountViewModel().accounts.reduce(false, { $0 || ($1.type == .microsoft || $1.type == .thirdParty) }) {
                     LauncherConfig.shared.hasMicrosoftAccount = true
                     continue
                 }

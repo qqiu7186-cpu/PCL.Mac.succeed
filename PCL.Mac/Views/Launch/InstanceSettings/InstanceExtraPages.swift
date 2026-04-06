@@ -280,6 +280,15 @@ struct InstanceOverviewPage: View {
             + [instance.runningDirectory.appending(path: "\(instance.runningDirectory.lastPathComponent).jar").path])
             .joined(separator: ":")
         let accessToken = account.accessToken()
+        var launchOptions: LaunchOptions = .init()
+        launchOptions.profile = account.profile
+        launchOptions.accessToken = accessToken
+        launchOptions.runningDirectory = instance.runningDirectory
+        launchOptions.repository = repository
+        launchOptions.manifest = manifest
+        launchOptions.javaRuntime = runtime
+        launchOptions.javaReleaseType = runtime.releaseType
+        launchOptions.memory = instance.config.jvmHeapSize
         let values: [String: String] = [
             "natives_directory": instance.runningDirectory.appending(path: "natives").path,
             "launcher_name": "PCL.Mac",
@@ -293,20 +302,11 @@ struct InstanceOverviewPage: View {
             "assets_index_name": manifest.assetIndex.id,
             "auth_uuid": UUIDUtils.string(of: account.profile.id, withHyphens: false),
             "auth_access_token": accessToken,
-            "user_type": "msa",
+            "user_type": launchOptions.userType,
             "version_type": "PCL.Mac",
-            "user_properties": "{}",
+            "user_properties": launchOptions.userProperties,
             "classpath": classpath
         ]
-        var launchOptions: LaunchOptions = .init()
-        launchOptions.profile = account.profile
-        launchOptions.accessToken = accessToken
-        launchOptions.runningDirectory = instance.runningDirectory
-        launchOptions.repository = repository
-        launchOptions.manifest = manifest
-        launchOptions.javaRuntime = runtime
-        launchOptions.javaReleaseType = runtime.releaseType
-        launchOptions.memory = instance.config.jvmHeapSize
         let args = MinecraftLauncher.buildLaunchArguments(
             manifest: manifest,
             values: values,

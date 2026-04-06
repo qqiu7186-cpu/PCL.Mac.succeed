@@ -20,6 +20,13 @@ public struct JavaRuntime: CustomStringConvertible {
     public let implementor: String?
     /// `java` 可执行文件 URL。
     public let executableURL: URL
+
+    public enum JavaReleaseType: String, Codable {
+        case stableLTS
+        case stable
+        case earlyAccess
+        case unknown
+    }
     
     public enum JavaType: CustomStringConvertible {
         case jdk, jre
@@ -37,5 +44,25 @@ public struct JavaRuntime: CustomStringConvertible {
             return "\(type) \(version) \(architecture) (\(implementor))"
         }
         return "\(type) \(version) \(architecture)"
+    }
+
+    public var vendorName: String {
+        implementor ?? "Unknown"
+    }
+
+    public var releaseType: JavaReleaseType {
+        let lowered = version.lowercased()
+        if lowered.contains("ea") || lowered.contains("beta") || lowered.contains("preview") {
+            return .earlyAccess
+        }
+
+        switch majorVersion {
+        case 8, 11, 17, 21:
+            return .stableLTS
+        case 12...:
+            return .stable
+        default:
+            return .unknown
+        }
     }
 }

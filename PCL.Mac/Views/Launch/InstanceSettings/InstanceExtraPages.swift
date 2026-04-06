@@ -305,12 +305,13 @@ struct InstanceOverviewPage: View {
         launchOptions.repository = repository
         launchOptions.manifest = manifest
         launchOptions.javaRuntime = runtime
+        launchOptions.javaReleaseType = runtime.releaseType
         launchOptions.memory = instance.config.jvmHeapSize
-        var args: [String] = []
-        args.append(contentsOf: manifest.jvmArguments.flatMap { $0.rules.allSatisfy { $0.test(with: launchOptions) } ? $0.value : [] })
-        args.append(manifest.mainClass)
-        args.append(contentsOf: manifest.gameArguments.flatMap { $0.rules.allSatisfy { $0.test(with: launchOptions) } ? $0.value : [] })
-        args = args.map { Utils.replace($0, withValues: values) }
+        let args = MinecraftLauncher.buildLaunchArguments(
+            manifest: manifest,
+            values: values,
+            options: launchOptions
+        )
 
         let escapedArgs = args.map(shellEscape).joined(separator: " ")
         return "#!/bin/zsh\ncd \(shellEscape(instance.runningDirectory.path))\n\(shellEscape(runtime.executableURL.path)) \(escapedArgs)\n"

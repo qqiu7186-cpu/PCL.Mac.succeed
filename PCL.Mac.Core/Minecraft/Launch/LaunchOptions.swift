@@ -8,6 +8,17 @@
 import Foundation
 
 public struct LaunchOptions {
+    public struct JavaFallbackPolicy: Codable {
+        public var enabled: Bool = true
+        public var preferredReleaseOrder: [JavaRuntime.JavaReleaseType] = [.stableLTS, .stable, .earlyAccess]
+        public var fallbackMajors: [Int] = [21, 25, 26]
+        public var allowRosettaX64OnAppleSilicon: Bool = true
+        public var skipRuntimePrecheck: Bool = false
+        public var sanitizeJvmArguments: Bool = true
+
+        public init() {}
+    }
+
     public var profile: PlayerProfile!
     public var accessToken: String!
     public var javaRuntime: JavaRuntime!
@@ -16,6 +27,8 @@ public struct LaunchOptions {
     public var repository: MinecraftRepository!
     public var memory: UInt64 = 4096
     public var demo: Bool = false
+    public var javaReleaseType: JavaRuntime.JavaReleaseType?
+    public var javaFallbackPolicy: JavaFallbackPolicy = .init()
     
     public func validate() throws {
         if profile == nil || accessToken == nil { throw LaunchError.missingAccount }

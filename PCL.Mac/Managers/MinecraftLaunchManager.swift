@@ -155,6 +155,14 @@ class MinecraftLaunchManager: ObservableObject {
             minecraftVersion: instance.version.id,
             javaVersion: options.javaRuntime.version,
             javaArchitecture: options.javaRuntime.architecture.rawValue,
+            javaVendor: options.javaRuntime.vendorName,
+            javaReleaseType: options.javaReleaseType ?? options.javaRuntime.releaseType,
+            javaFallbackPolicy: options.javaFallbackPolicy,
+            finalJvmArguments: MinecraftLauncher.buildLaunchArguments(
+                manifest: options.manifest,
+                values: buildLauncherInfoValues(instance: instance, options: options),
+                options: options
+            ),
             instanceName: instance.name
         )
         
@@ -314,6 +322,48 @@ class MinecraftLaunchManager: ObservableObject {
         guard !keyword.isEmpty else { return 0 }
         return text.components(separatedBy: keyword).count - 1
     }
+
+    private func buildLauncherInfoValues(instance: MinecraftInstance, options: LaunchOptions) -> [String: String] {
+        let tunedMemory = max(UInt64(1024), min(options.memory, 16_384))
+        let minMemory = max(UInt64(512), min(1024, tunedMemory / 4))
+        let classpath = buildCrashReportClasspath(options: options, instance: instance)
+        return [
+            "natives_directory": instance.runningDirectory.appending(path: "natives").path,
+            "launcher_name": "PCL.Mac",
+            "launcher_version": Metadata.appVersion,
+            "classpath_separator": ":",
+            "library_directory": options.repository.librariesURL.path,
+            "max_memory": "\(tunedMemory)M",
+            "min_memory": "\(minMemory)M",
+            "maxMemory": "\(tunedMemory)M",
+            "minMemory": "\(minMemory)M",
+            "auth_player_name": options.profile.name,
+            "version_name": instance.runningDirectory.lastPathComponent,
+            "game_directory": instance.runningDirectory.path,
+            "assets_root": options.repository.assetsURL.path,
+            "assets_index_name": options.manifest.assetIndex.id,
+            "auth_uuid": UUIDUtils.string(of: options.profile.id, withHyphens: false),
+            "auth_access_token": options.accessToken,
+            "clientid": "",
+            "auth_xuid": "",
+            "xuid": "",
+            "user_type": "msa",
+            "version_type": "PCL.Mac",
+            "user_properties": "{}",
+            "classpath": classpath
+        ]
+    }
+
+    private func buildCrashReportClasspath(options: LaunchOptions, instance: MinecraftInstance) -> String {
+        var urls: [URL] = []
+        for library in options.manifest.getLibraries() {
+            if let artifact = library.artifact {
+                urls.append(options.repository.librariesURL.appending(path: artifact.path))
+            }
+        }
+        urls.append(instance.runningDirectory.appending(path: "\(instance.runningDirectory.lastPathComponent).jar"))
+        return urls.map(\.path).joined(separator: ":")
+    }
     
     private func subscribeToTask() {
         cancellables.removeAll()
@@ -355,6 +405,10 @@ class MinecraftLaunchManager: ObservableObject {
         public let minecraftVersion: String
         public let javaVersion: String
         public let javaArchitecture: String
+        public let javaVendor: String
+        public let javaReleaseType: JavaRuntime.JavaReleaseType
+        public let javaFallbackPolicy: LaunchOptions.JavaFallbackPolicy
+        public let finalJvmArguments: [String]
         public let instanceName: String
     }
 

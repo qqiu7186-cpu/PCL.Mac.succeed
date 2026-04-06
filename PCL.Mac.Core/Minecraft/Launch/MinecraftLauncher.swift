@@ -61,16 +61,14 @@ public class MinecraftLauncher {
         let process: Process = .init()
         process.executableURL = options.javaRuntime.executableURL
         process.currentDirectoryURL = runningDirectory
-        
-        var arguments: [String] = []
-        arguments.append(contentsOf: manifest.jvmArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
-        arguments.append(manifest.mainClass)
-        arguments.append(contentsOf: manifest.gameArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
-        arguments = arguments.map { Utils.replace($0, withValues: values) }
-        arguments = arguments.map(sanitizeUnresolvedPlaceholders)
-        arguments = removeEmptyOptionalArguments(arguments)
-        arguments = filterKnownUnsafeRuntimeArguments(arguments)
-        applyRuntimePerformanceDefaults(arguments: &arguments)
+
+        let arguments = Self.buildLaunchArguments(
+            manifest: manifest,
+            values: values,
+            options: options,
+            effectiveMemoryMB: effectiveMemoryMB,
+            effectiveMinMemoryMB: effectiveMinMemoryMB
+        )
         process.arguments = arguments
         process.environment = sanitizedLaunchEnvironment()
         
@@ -99,6 +97,37 @@ public class MinecraftLauncher {
         }
         return process
     }
+
+    public static func buildLaunchArguments(
+        manifest: ClientManifest,
+        values: [String: String],
+        options: LaunchOptions,
+        effectiveMemoryMB: UInt64? = nil,
+        effectiveMinMemoryMB: UInt64? = nil
+    ) -> [String] {
+        let tunedMemory = effectiveMemoryMB ?? tuneMemoryMB(requested: options.memory)
+        let tunedMinMemory = effectiveMinMemoryMB ?? max(512, min(1024, tunedMemory / 4))
+
+        var arguments: [String] = []
+        arguments.append(contentsOf: manifest.jvmArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
+        arguments.append(manifest.mainClass)
+        arguments.append(contentsOf: manifest.gameArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
+        arguments = arguments.map { Utils.replace($0, withValues: values) }
+        arguments = arguments.map(sanitizeUnresolvedPlaceholders)
+        arguments = removeEmptyOptionalArguments(arguments)
+
+        if options.javaFallbackPolicy.sanitizeJvmArguments {
+            arguments = sanitizeJVMArguments(arguments, options: options)
+        }
+
+        applyRuntimePerformanceDefaults(
+            arguments: &arguments,
+            options: options,
+            effectiveMemoryMB: tunedMemory,
+            effectiveMinMemoryMB: tunedMinMemory
+        )
+        return arguments
+    }
     
     private func buildClasspath() -> String {
         var urls: [URL] = []
@@ -111,9 +140,15 @@ public class MinecraftLauncher {
         return urls.map(\.path).joined(separator: ":")
     }
 
-    private func applyRuntimePerformanceDefaults(arguments: inout [String]) {
+    private static func applyRuntimePerformanceDefaults(
+        arguments: inout [String],
+        options: LaunchOptions,
+        effectiveMemoryMB: UInt64,
+        effectiveMinMemoryMB: UInt64
+    ) {
         let lowered = arguments.map { $0.lowercased() }
-        let usingOpenJ9 = isOpenJ9Runtime()
+        let usingOpenJ9 = isOpenJ9Runtime(options: options)
+        let releaseType = options.javaReleaseType ?? options.javaRuntime.releaseType
 
         if !lowered.contains(where: { $0.hasPrefix("-xmx") }) {
             arguments.insert("-Xmx\(effectiveMemoryMB)M", at: 0)
@@ -131,8 +166,7 @@ public class MinecraftLauncher {
             } else {
                 arguments.insert(contentsOf: [
                     "-XX:+UseG1GC",
-                    "-XX:MaxGCPauseMillis=20",
-                    "-XX:+ParallelRefProcEnabled"
+                    "-XX:MaxGCPauseMillis=30"
                 ], at: 0)
             }
         }
@@ -144,6 +178,11 @@ public class MinecraftLauncher {
                 arguments.insert("-Xsoftmx\(softMx)M", at: 0)
             }
         } else {
+            let hasReservedCodeCache = lowered.contains { $0.hasPrefix("-xx:reservedcodecachesize=") }
+            if !hasReservedCodeCache {
+                let reservedCodeCache = releaseType == .stableLTS ? "256M" : "192M"
+                arguments.insert("-XX:ReservedCodeCacheSize=\(reservedCodeCache)", at: 0)
+            }
             let hasMinHeapFreeRatio = lowered.contains { $0.hasPrefix("-xx:minheapfreeratio=") }
             if !hasMinHeapFreeRatio {
                 arguments.insert("-XX:MinHeapFreeRatio=10", at: 0)
@@ -165,7 +204,7 @@ public class MinecraftLauncher {
         }
     }
 
-    private func isOpenJ9Runtime() -> Bool {
+    private static func isOpenJ9Runtime(options: LaunchOptions) -> Bool {
         if let implementor = options.javaRuntime.implementor?.lowercased() {
             if implementor.contains("ibm") || implementor.contains("semeru") || implementor.contains("openj9") {
                 return true
@@ -174,7 +213,7 @@ public class MinecraftLauncher {
         return options.javaRuntime.executableURL.path == "/usr/bin/java"
     }
 
-    private func sanitizeUnresolvedPlaceholders(_ argument: String) -> String {
+    private static func sanitizeUnresolvedPlaceholders(_ argument: String) -> String {
         var value = argument
         while let start = value.range(of: "${"), let end = value[start.upperBound...].firstIndex(of: "}") {
             value.removeSubrange(start.lowerBound...end)
@@ -182,7 +221,7 @@ public class MinecraftLauncher {
         return value
     }
 
-    private func removeEmptyOptionalArguments(_ arguments: [String]) -> [String] {
+    private static func removeEmptyOptionalArguments(_ arguments: [String]) -> [String] {
         let optionsWithValue: Set<String> = ["--clientId", "--xuid"]
         var result: [String] = []
         var index = 0
@@ -226,25 +265,36 @@ public class MinecraftLauncher {
         return result
     }
 
-    private func filterKnownUnsafeRuntimeArguments(_ arguments: [String]) -> [String] {
-        guard shouldDisableCompactObjectHeaders else {
-            return arguments
+    private static func sanitizeJVMArguments(_ arguments: [String], options: LaunchOptions) -> [String] {
+        let releaseType = options.javaReleaseType ?? options.javaRuntime.releaseType
+        let isHighRiskArm64 = options.javaRuntime.majorVersion >= 25 && options.javaRuntime.architecture == .arm64
+        let blockedExact = Set([
+            "-XX:+ParallelRefProcEnabled",
+            "-XX:+AlwaysPreTouch"
+        ] + (isHighRiskArm64 ? ["-XX:+UseCompactObjectHeaders"] : []))
+        let blockedPrefixes = [
+            "-xx:initialcodecachesize=",
+            "-xx:codecacheexpansionsize=",
+            "-xx:reservedcodecachesize=",
+            "-xx:nonprofiledcodeheapsize=",
+            "-xx:profiledcodeheapsize=",
+            "-xx:nonnmethodcodeheapsize="
+        ]
+
+        let filtered = arguments.filter { argument in
+            let lowered = argument.lowercased()
+            if blockedExact.contains(argument) { return false }
+            if blockedPrefixes.contains(where: { lowered.hasPrefix($0) }) { return false }
+            if releaseType == .earlyAccess && lowered == "-xx:+parallelrefprocenabled" { return false }
+            return true
         }
 
-        let filtered = arguments.filter { $0.lowercased() != "-xx:+usecompactobjectheaders" }
-        if filtered.count != arguments.count {
-            warn("检测到 Java \(options.javaRuntime.version) 在当前 macOS/CPU 组合下启用 Compact Object Headers 可能导致崩溃，已自动移除该参数。")
-        }
         return filtered
-    }
-
-    private var shouldDisableCompactObjectHeaders: Bool {
-        options.javaRuntime.majorVersion >= 25 && options.javaRuntime.architecture == .arm64
     }
 
     private func sanitizedLaunchEnvironment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
-        guard shouldDisableCompactObjectHeaders else {
+        guard options.javaRuntime.majorVersion >= 25 && options.javaRuntime.architecture == .arm64 else {
             return environment
         }
 

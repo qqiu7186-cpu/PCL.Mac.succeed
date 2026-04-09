@@ -30,15 +30,30 @@ struct InstanceListPage: View {
                                 NSWorkspace.shared.open(repository.url)
                             }
                             .frame(width: 150)
-                            MyButton("更改显示名称") {
-                                MessageBoxManager.shared.showInput(title: "输入新名称") { name in
-                                    guard let name, !name.isEmpty else { return }
-                                    repository.name = name
-                                    AppRouter.shared.setRoot(.launch)
-                                    DispatchQueue.main.async {
-                                        AppRouter.shared.append(.instanceList(repository))
+                            MyButton("编辑目录信息") {
+                                MessageBoxManager.shared.showInput(title: "输入目录名", initialContent: repository.name) { name in
+                                    guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+                                    let panel: NSOpenPanel = .init()
+                                    panel.allowsMultipleSelection = false
+                                    panel.canChooseFiles = false
+                                    panel.canChooseDirectories = true
+                                    panel.allowedContentTypes = [.folder]
+                                    panel.directoryURL = repository.url
+                                    panel.message = "选择新的游戏目录（可与当前目录相同）"
+
+                                    guard panel.runModal() == .OK, let newURL = panel.url else { return }
+
+                                    do {
+                                        try instanceViewModel.editRepository(repository, newName: name, newURL: newURL)
+                                        AppRouter.shared.setRoot(.launch)
+                                        DispatchQueue.main.async {
+                                            AppRouter.shared.append(.instanceList(repository))
+                                        }
+                                        hint("目录信息已更新！", type: .finish)
+                                    } catch {
+                                        hint("更新目录失败：\(error.localizedDescription)", type: .critical)
                                     }
-                                    hint("已将目录名称更改为 \(name)！", type: .finish)
                                 }
                             }
                             .frame(width: 150)

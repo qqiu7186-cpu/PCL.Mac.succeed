@@ -157,6 +157,32 @@ class InstanceManager: ObservableObject {
         syncConfig()
         switchRepository(to: repository)
     }
+
+    public func editRepository(_ repository: MinecraftRepository, newName: String, newURL: URL) throws {
+        let normalizedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            throw SimpleError("目录名不能为空。")
+        }
+
+        let standardizedURL = newURL.standardizedFileURL
+        if let conflict = repositories.first(where: { $0 !== repository && $0.url.standardizedFileURL == standardizedURL }) {
+            throw SimpleError("该目录已存在：\(conflict.name)")
+        }
+
+        repository.name = normalizedName
+        repository.url = standardizedURL
+        try repository.load()
+
+        if currentRepository === repository {
+            if let currentInstance, let refreshed = try? repository.instance(id: currentInstance.name) {
+                self.currentInstance = refreshed
+            } else {
+                self.currentInstance = repository.instances?.first
+            }
+        }
+
+        syncConfig()
+    }
     
     /// 请求用户选择并添加游戏目录。
     public func requestAddRepository() throws {

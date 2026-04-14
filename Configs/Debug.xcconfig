@@ -1,2 +1,2 @@
 #include "Base.xcconfig"
-DEBUG_MODE = YES
+DEBUG_MODE = NO

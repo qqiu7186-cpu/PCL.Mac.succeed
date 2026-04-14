@@ -29,7 +29,7 @@ public struct PlayerProfile: Codable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.name = try container.decode(String.self, forKey: .name)
-        self.id = try UUIDUtils.uuidThrowing(of: container.decode(String.self, forKey: .id))
+        self.id = try Self.decodePlayerID(from: container)
         self.properties = try container.decodeIfPresent([PlayerProfile.Property].self, forKey: .properties) ?? []
     }
     
@@ -46,5 +46,21 @@ public struct PlayerProfile: Codable {
         public let name: String
         public let signature: String?
         public let value: Data
+    }
+
+    private static func decodePlayerID(from container: KeyedDecodingContainer<CodingKeys>) throws -> UUID {
+        if let stringID = try? container.decode(String.self, forKey: .id) {
+            return try UUIDUtils.uuidThrowing(of: stringID)
+        }
+
+        if let intID = try? container.decode(Int.self, forKey: .id) {
+            return UUIDUtils.uuid(ofOfflinePlayer: String(intID))
+        }
+
+        if let doubleID = try? container.decode(Double.self, forKey: .id) {
+            return UUIDUtils.uuid(ofOfflinePlayer: String(Int(doubleID)))
+        }
+
+        throw DecodingError.dataCorruptedError(forKey: .id, in: container, debugDescription: "Expected 'id' to be a string or number.")
     }
 }

@@ -58,13 +58,13 @@ struct InstanceOverviewPage: View {
                             MyButton("修改实例描述") {
                                 MessageBoxManager.shared.showInput(title: "修改实例描述", initialContent: localDesc, placeholder: "输入描述") { text in
                                     localDesc = text ?? ""
-                                    UserDefaults.standard.set(localDesc, forKey: "instance.meta.desc.\(id)")
+                                    InstanceMetadataService.setDescription(localDesc, for: id)
                                 }
                             }
                             .frame(width: 120)
                             MyButton(isFavorite ? "取消收藏" : "加入收藏夹") {
                                 isFavorite.toggle()
-                                UserDefaults.standard.set(isFavorite, forKey: "instance.meta.favorite.\(id)")
+                                InstanceMetadataService.setFavorite(isFavorite, for: id)
                             }
                             .frame(width: 120)
                             Spacer()
@@ -164,27 +164,13 @@ struct InstanceOverviewPage: View {
         }
         .task(id: id) {
             instance = InstancePageLoader.loadInstance(id)
-            localDesc = UserDefaults.standard.string(forKey: "instance.meta.desc.\(id)") ?? ""
-            isFavorite = UserDefaults.standard.bool(forKey: "instance.meta.favorite.\(id)")
+            localDesc = InstanceMetadataService.description(for: id)
+            isFavorite = InstanceMetadataService.isFavorite(instanceID: id)
         }
     }
 
     private func migrateInstanceMeta(from oldID: String, to newID: String) {
-        guard oldID != newID else { return }
-        let defaults = UserDefaults.standard
-        let oldDescKey = "instance.meta.desc.\(oldID)"
-        let oldFavoriteKey = "instance.meta.favorite.\(oldID)"
-        let newDescKey = "instance.meta.desc.\(newID)"
-        let newFavoriteKey = "instance.meta.favorite.\(newID)"
-
-        if let desc = defaults.string(forKey: oldDescKey) {
-            defaults.set(desc, forKey: newDescKey)
-            defaults.removeObject(forKey: oldDescKey)
-        }
-        if defaults.object(forKey: oldFavoriteKey) != nil {
-            defaults.set(defaults.bool(forKey: oldFavoriteKey), forKey: newFavoriteKey)
-            defaults.removeObject(forKey: oldFavoriteKey)
-        }
+        InstanceMetadataService.migrate(from: oldID, to: newID)
     }
 
     private func checkGameFiles(_ instance: MinecraftInstance) {
@@ -1474,21 +1460,7 @@ struct InstanceModifyPage: View {
     }
 
     private func migrateInstanceMeta(from oldID: String, to newID: String) {
-        guard oldID != newID else { return }
-        let defaults = UserDefaults.standard
-        let oldDescKey = "instance.meta.desc.\(oldID)"
-        let oldFavoriteKey = "instance.meta.favorite.\(oldID)"
-        let newDescKey = "instance.meta.desc.\(newID)"
-        let newFavoriteKey = "instance.meta.favorite.\(newID)"
-
-        if let desc = defaults.string(forKey: oldDescKey) {
-            defaults.set(desc, forKey: newDescKey)
-            defaults.removeObject(forKey: oldDescKey)
-        }
-        if defaults.object(forKey: oldFavoriteKey) != nil {
-            defaults.set(defaults.bool(forKey: oldFavoriteKey), forKey: newFavoriteKey)
-            defaults.removeObject(forKey: oldFavoriteKey)
-        }
+        InstanceMetadataService.migrate(from: oldID, to: newID)
     }
 }
 

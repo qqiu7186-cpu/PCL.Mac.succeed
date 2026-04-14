@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import Core
+@preconcurrency import Core
 import AppKit
 
 /// Minecraft 启动任务生成器。
@@ -186,7 +186,11 @@ public enum MinecraftLaunchTask {
     }
     
     private static func checkResources(task: SubTask, model: Model) async throws {
-        try await MinecraftLaunchPreparationService.checkResources(model: model, progressHandler: task.setProgress(_:))
+        try await MinecraftLaunchPreparationService.checkResources(model: model) { progress in
+            DispatchQueue.main.async {
+                task.setProgress(progress)
+            }
+        }
     }
     
     private static func launch(task: SubTask, model: Model) async throws {

@@ -14,17 +14,7 @@ private enum InstancePageLoader {
     }
 
     static func folderSize(at url: URL) -> Int64 {
-        guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) else {
-            return 0
-        }
-        var total: Int64 = 0
-        for case let fileURL as URL in enumerator {
-            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            if values?.isRegularFile == true {
-                total += Int64(values?.fileSize ?? 0)
-            }
-        }
-        return total
+        InstanceFileBrowserService.directoryByteSize(at: url)
     }
 }
 
@@ -451,7 +441,7 @@ struct InstanceModsPage: View {
         guard let instance else { return }
         let modsURL = instance.runningDirectory.appending(path: "mods")
         try? FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
-        let list = (try? FileManager.default.contentsOfDirectory(at: modsURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let list = InstanceFileBrowserService.listDirectory(at: modsURL)
         files = list
             .filter { ["jar", "disabled"].contains($0.pathExtension.lowercased()) }
             .map { .init(id: $0, url: $0) }
@@ -581,6 +571,7 @@ struct InstanceSavesPage: View {
     @State private var saveSortOption: SaveSortOption = .modifiedDesc
     @State private var selectedDatapackSaveURL: URL?
     @State private var datapacks: [DatapackItem] = []
+    @State private var directorySizes: [URL: Int64] = [:]
 
     private var displayedSaves: [SaveItem] {
         let keyword = saveQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -759,21 +750,17 @@ struct InstanceSavesPage: View {
     private func reloadSaves() {
         guard let instance else { return }
         let savesURL = instance.runningDirectory.appending(path: "saves")
-        let list = (try? FileManager.default.contentsOfDirectory(at: savesURL, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey], options: [.skipsHiddenFiles])) ?? []
-        saves = list.compactMap { url in
-            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
-            guard values?.isDirectory == true else { return nil }
-            return SaveItem(id: url, url: url, modifiedAt: values?.contentModificationDate, byteSize: InstancePageLoader.folderSize(at: url))
+        let list = InstanceFileBrowserService.saveDirectoryURLs(at: savesURL)
+        saves = list.map { entry in
+            let size = directorySizes[entry.url] ?? DirectorySizeService.cachedSize(for: entry.url) ?? 0
+            return SaveItem(id: entry.url, url: entry.url, modifiedAt: entry.modifiedAt, byteSize: size)
         }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 
         let backupsURL = instance.runningDirectory.appending(path: "PCL.Mac-backups").appending(path: "saves")
-        let backupsList = (try? FileManager.default.contentsOfDirectory(at: backupsURL, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: [.skipsHiddenFiles])) ?? []
-        backups = backupsList
-            .filter { $0.pathExtension.lowercased() == "zip" }
-            .map { url in
-                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-                return SaveBackupItem(id: url, url: url, modifiedAt: values?.contentModificationDate, byteSize: Int64(values?.fileSize ?? 0))
+        backups = InstanceFileBrowserService.backupZipURLs(at: backupsURL)
+            .map { entry in
+                SaveBackupItem(id: entry.url, url: entry.url, modifiedAt: entry.modifiedAt, byteSize: entry.byteSize)
             }
             .sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
 
@@ -783,6 +770,19 @@ struct InstanceSavesPage: View {
             } else {
                 self.selectedDatapackSaveURL = nil
                 datapacks = []
+            }
+        }
+
+        Task {
+            for entry in list {
+                let size = await DirectorySizeService.loadSize(for: entry.url)
+                await MainActor.run {
+                    directorySizes[entry.url] = size
+                    if let index = saves.firstIndex(where: { $0.url == entry.url }) {
+                        let item = saves[index]
+                        saves[index] = SaveItem(id: item.id, url: item.url, modifiedAt: item.modifiedAt, byteSize: size)
+                    }
+                }
             }
         }
     }
@@ -857,20 +857,25 @@ struct InstanceSavesPage: View {
 
     private func reloadDatapacks(for save: SaveItem) {
         let datapacksURL = datapacksDirectory(for: save)
-        let list = (try? FileManager.default.contentsOfDirectory(
-            at: datapacksURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        datapacks = list.compactMap { url in
-            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey])
-            let isDirectory = values?.isDirectory == true
-            let isZip = url.pathExtension.lowercased() == "zip"
-            guard isDirectory || isZip else { return nil }
-            let byteSize: Int64 = isDirectory ? InstancePageLoader.folderSize(at: url) : Int64(values?.fileSize ?? 0)
-            return DatapackItem(id: url, url: url, modifiedAt: values?.contentModificationDate, byteSize: byteSize)
+        let list = InstanceFileBrowserService.datapackEntries(at: datapacksURL)
+        datapacks = list.map { entry in
+            let byteSize: Int64 = entry.isDirectory ? (directorySizes[entry.url] ?? DirectorySizeService.cachedSize(for: entry.url) ?? 0) : entry.byteSize
+            return DatapackItem(id: entry.url, url: entry.url, modifiedAt: entry.modifiedAt, byteSize: byteSize)
         }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
+        Task {
+            for entry in list where entry.isDirectory {
+                let size = await DirectorySizeService.loadSize(for: entry.url)
+                await MainActor.run {
+                    directorySizes[entry.url] = size
+                    if let index = datapacks.firstIndex(where: { $0.url == entry.url }) {
+                        let item = datapacks[index]
+                        datapacks[index] = DatapackItem(id: item.id, url: item.url, modifiedAt: item.modifiedAt, byteSize: size)
+                    }
+                }
+            }
+        }
     }
 
     private func importDatapack(for save: SaveItem) {
@@ -1798,10 +1803,9 @@ struct InstanceFolderResourcePage: View {
     private func reloadFiles() {
         guard let instance else { return }
         let folder = folderURL(instance)
-        let list = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: [.skipsHiddenFiles])) ?? []
-        files = list.map { url in
-            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            return ResourceFileItem(id: url, url: url, modifiedAt: values?.contentModificationDate, byteSize: Int64(values?.fileSize ?? 0))
+        let list = InstanceFileBrowserService.resourceFileEntries(at: folder)
+        files = list.map { entry in
+            ResourceFileItem(id: entry.url, url: entry.url, modifiedAt: entry.modifiedAt, byteSize: entry.byteSize)
         }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

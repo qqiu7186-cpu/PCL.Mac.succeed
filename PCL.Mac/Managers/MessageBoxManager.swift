@@ -105,6 +105,47 @@ class MessageBoxManager: ObservableObject {
         }
         return text
     }
+
+    public func showAlertAsync(
+        title: String,
+        content: String,
+        level: MessageBoxModel.Level = .info,
+        buttonLabel: String = "确认"
+    ) async {
+        _ = await showTextAsync(
+            title: title,
+            content: content,
+            level: level,
+            buttons: [.yes(label: buttonLabel, type: .highlight)]
+        )
+    }
+
+    public func showConfirmAsync(
+        title: String,
+        content: String,
+        level: MessageBoxModel.Level = .info,
+        cancelLabel: String = "取消",
+        confirmLabel: String = "确认",
+        confirmType: MyButton.`Type` = .highlight
+    ) async -> Bool {
+        await showTextAsync(
+            title: title,
+            content: content,
+            level: level,
+            buttons: [
+                .no(label: cancelLabel),
+                .yes(label: confirmLabel, type: confirmType)
+            ]
+        ) == 1
+    }
+
+    public func showErrorAsync(
+        title: String,
+        content: String,
+        buttonLabel: String = "确认"
+    ) async {
+        await showAlertAsync(title: title, content: content, level: .error, buttonLabel: buttonLabel)
+    }
     
     /// 关闭当前模态框。
     /// - Parameter result: 附带的结果。

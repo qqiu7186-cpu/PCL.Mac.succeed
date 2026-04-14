@@ -10,13 +10,13 @@ enum MinecraftLaunchPreparationService {
         }
         content += "\n点击下方按钮可以跳转到安装页面！"
 
-        if await MessageBoxManager.shared.showTextAsync(
+        if await MessageBoxManager.shared.showConfirmAsync(
             title: "没有可用的 Java",
             content: content,
             level: .error,
-            .no(),
-            .yes(label: "去安装")
-        ) == 1 {
+            cancelLabel: "取消",
+            confirmLabel: "去安装"
+        ) {
             await AppRouter.shared.setRoot(.settings)
             await AppRouter.shared.append(.javaSettings)
         }
@@ -70,17 +70,15 @@ enum MinecraftLaunchPreparationService {
         for entry in entries {
             switch entry {
             case .javaVersionTooLow(let min):
-                _ = await MessageBoxManager.shared.showTextAsync(
+                await MessageBoxManager.shared.showErrorAsync(
                     title: "Java 版本过低",
-                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本需要 \(min)！",
-                    level: .error
+                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本需要 \(min)！"
                 )
                 throw CancellationError()
             case .javaVersionOutOfRange(let min, let max):
-                _ = await MessageBoxManager.shared.showTextAsync(
+                await MessageBoxManager.shared.showErrorAsync(
                     title: "Java 版本不兼容",
-                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本只支持 Java \(min)-\(max)。",
-                    level: .error
+                    content: "你正在使用 Java \(model.options.javaRuntime.majorVersion) 启动游戏，但这个版本只支持 Java \(min)-\(max)。"
                 )
                 throw CancellationError()
             case .noMicrosoftAccount:
@@ -126,13 +124,13 @@ enum MinecraftLaunchPreparationService {
                 }
             case .armNotSupported:
                 if let runtime: JavaRuntime = model.instance.searchJava(arch: .x64) {
-                    if await MessageBoxManager.shared.showTextAsync(
+                    if !(await MessageBoxManager.shared.showConfirmAsync(
                         title: "不支持的 Java 架构",
                         content: "你正在启动的版本（\(model.instance.version)）不支持使用 ARM64 架构的 Java！\nPCL.Mac 找到了一个可用的 Java，是否切换并继续启动？",
                         level: .error,
-                        .no(),
-                        .yes(label: "切换并继续", type: .highlight)
-                    ) == 0 {
+                        cancelLabel: "取消",
+                        confirmLabel: "切换并继续"
+                    )) {
                         throw CancellationError()
                     }
                     model.instance.setJava(url: runtime.executableURL)

@@ -56,32 +56,29 @@ struct ResourceInstallPage: View {
             log("当前实例不满足该版本要求：\(error.localizedDescription)")
             switch error {
             case .versionUnsupported:
-                if await MessageBoxManager.shared.showTextAsync(
+                if !(await MessageBoxManager.shared.showConfirmAsync(
                     title: "当前实例不符合要求",
                     content: "\(error.localizedDescription)\n你可以选择继续安装，但游戏可能会发生崩溃或无法正常游玩。\n是否继续安装？",
                     level: .error,
-                    .no(),
-                    .yes(label: "继续", type: .red)
-                ) != 1 {
+                    cancelLabel: "取消",
+                    confirmLabel: "继续",
+                    confirmType: .red
+                )) {
                     return
                 }
             default:
-                _ = await MessageBoxManager.shared.showTextAsync(
+                await MessageBoxManager.shared.showErrorAsync(
                     title: "当前实例不符合要求",
-                    content: error.localizedDescription,
-                    level: .error
+                    content: error.localizedDescription
                 )
                 return
             }
         }
-        
-        if await MessageBoxManager.shared.showTextAsync(
+
+        if await MessageBoxManager.shared.showConfirmAsync(
             title: "确认",
-            content: "确定要安装 \(viewModel.project.title) \(version.version) 吗？",
-            level: .info,
-            .no(),
-            .yes(type: .highlight)
-        ) == 1 {
+            content: "确定要安装 \(viewModel.project.title) \(version.version) 吗？"
+        ) {
             do {
                 let task = try await viewModel.createInstallTask(forVersion: version, to: instance)
                 TaskManager.shared.execute(task: task)
@@ -96,13 +93,10 @@ struct ResourceInstallPage: View {
             return
         }
         
-        guard await MessageBoxManager.shared.showTextAsync(
+        guard await MessageBoxManager.shared.showConfirmAsync(
             title: "确认",
-            content: "确定要安装整合包 \(viewModel.project.title) \(version.version) 吗？",
-            level: .info,
-            .no(),
-            .yes(type: .highlight)
-        ) == 1 else { return }
+            content: "确定要安装整合包 \(viewModel.project.title) \(version.version) 吗？"
+        ) else { return }
         
         hint("开始下载整合包……")
         

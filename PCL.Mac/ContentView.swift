@@ -8,13 +8,21 @@
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject private var hintManager: HintManager = .shared
+    var body: some View {
+        AppVisualEffectContainer {
+            RouterShellView()
+        }
+        .overlay { ExtraButtonsOverlay() }
+        .overlay { MessageBoxOverlay() }
+        .overlay { HintOverlayContainer() }
+    }
+}
+
+private struct RouterShellView: View {
     @ObservedObject private var router: AppRouter = .shared
-    @ObservedObject private var easterEggManager: EasterEggManager = .shared
-    
     @State private var sidebarWidth: CGFloat = AppRouter.shared.sidebar.width
     @State private var sidebarContentAnimationProgress: Double = 0.0
-    
+
     var body: some View {
         VStack(spacing: 0) {
             TitleBarView()
@@ -39,7 +47,7 @@ struct ContentView: View {
                         }
                     }
                     .zIndex(10)
-                
+
                 router.content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -54,28 +62,43 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay { ExtraButtonsOverlay() }
-        .overlay { MessageBoxOverlay() }
-        .overlay {
-            VStack(alignment: .leading, spacing: 16) {
-                Spacer()
-                ForEach(hintManager.hints) { hint in
-                    HintView(model: hint)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .animation(.easeOut(duration: 0.2), value: hintManager.hints)
-            .padding(.bottom, 100)
-        }
-        .background(Color(0xC0DEF5))
-        .rotation3DEffect(easterEggManager.rotationAngle, axis: easterEggManager.rotationAxis)
-        .contrast(easterEggManager.modifyColor ? -1 : 1)
         .onAppear {
-            // 当前一定是启动页面，直接开始动画
             withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
                 sidebarContentAnimationProgress = 1.0
             }
         }
+    }
+}
+
+private struct AppVisualEffectContainer<Content: View>: View {
+    @ObservedObject private var easterEggManager: EasterEggManager = .shared
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .background(Color(0xC0DEF5))
+            .rotation3DEffect(easterEggManager.rotationAngle, axis: easterEggManager.rotationAxis)
+            .contrast(easterEggManager.modifyColor ? -1 : 1)
+    }
+}
+
+private struct HintOverlayContainer: View {
+    @ObservedObject private var hintManager: HintManager = .shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Spacer()
+            ForEach(hintManager.hints) { hint in
+                HintView(model: hint)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .animation(.easeOut(duration: 0.2), value: hintManager.hints)
+        .padding(.bottom, 100)
     }
 }
 

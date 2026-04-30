@@ -64,6 +64,9 @@ struct MyCard<Content: View, Action: View>: View {
     }
     
     var body: some View {
+        let hoverEffectsEnabled = appearFinished && !disableHoverAnimation
+        let effectiveHovered = hoverEffectsEnabled && hovered
+
         VStack(spacing: 0) {
             HStack {
                 if titled {
@@ -81,7 +84,7 @@ struct MyCard<Content: View, Action: View>: View {
                     }
                 }
             }
-            .foregroundStyle(appearFinished && !disableHoverAnimation && hovered ? Color.color2 : .color1)
+            .foregroundStyle(effectiveHovered ? Color.color2 : .color1)
             .frame(height: titled ? 12 : 0)
             .frame(maxWidth: .infinity)
             .padding(titled ? 12 : padding / 2)
@@ -148,11 +151,15 @@ struct MyCard<Content: View, Action: View>: View {
         .background {
             RoundedRectangle(cornerRadius: 5)
                 .fill(Color.colorGray8)
-                .shadow(color: hovered ? .color3.opacity(0.6) : .black.opacity(0.1), radius: 6)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(effectiveHovered ? Color.color3.opacity(0.35) : .clear, lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
         }
         .offset(y: appeared ? 0 : -25)
         .opacity(appeared ? 1 : 0)
-        .animation(.easeInOut(duration: 0.2), value: hovered)
+        .animation(.easeInOut(duration: 0.16), value: effectiveHovered)
         .onAppear {
             if disableCardAppearAnimation {
                 appeared = true

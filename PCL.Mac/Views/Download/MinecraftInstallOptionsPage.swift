@@ -12,9 +12,9 @@ import SwiftyJSON
 struct MinecraftInstallOptionsPage: View {
     @StateObject private var viewModel: MinecraftInstallOptionsViewModel
     @EnvironmentObject private var instanceVM: InstanceManager
-    
-    init(version: VersionManifest.Version) {
-        self._viewModel = .init(wrappedValue: .init(version: version))
+     
+    init(version: VersionManifest.Version, modifyContext: InstanceModifyContext? = nil) {
+        self._viewModel = .init(wrappedValue: .init(version: version, modifyContext: modifyContext))
     }
     
     var body: some View {
@@ -34,7 +34,12 @@ struct MinecraftInstallOptionsPage: View {
                                 MyText(errorMessage, color: .red)
                             }
                             MyTextField(text: $viewModel.name)
-                            .fixedSize(horizontal: false, vertical: true)
+                                .disabled(viewModel.modifyContext != nil)
+                                .opacity(viewModel.modifyContext == nil ? 1 : 0.7)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let modifyContext = viewModel.modifyContext {
+                                MyText("正在修改实例：\(modifyContext.instanceID)", size: 12, color: .colorGray3)
+                            }
                         }
                     }
                 }
@@ -54,43 +59,14 @@ struct MinecraftInstallOptionsPage: View {
         }
         .overlay(alignment: .bottom) {
             MyExtraTextButton(image: "DownloadPageIcon", imageSize: 20, text: "开始下载") {
-                if let errorMessage = viewModel.errorMessage {
-                    hint(errorMessage, type: .critical)
-                    return
-                }
                 guard let repository = instanceVM.currentRepository else {
                     warn("试图安装 \(viewModel.version)，但没有设置游戏仓库")
                     hint("请先添加一个游戏目录！", type: .critical)
                     return
                 }
-                let hasRunningInstallTask: Bool = TaskManager.shared.tasks
-                    .contains(where: { $0.name.contains("安装") || $0.name.contains("下载") })
-                if hasRunningInstallTask {
-                    hint("当前有正在进行的安装任务，请稍后再试。", type: .info)
-                    if AppRouter.shared.getLast() != .tasks {
-                        AppRouter.shared.append(.tasks)
-                    }
-                    return
+                if let message = viewModel.startInstall(in: repository, instanceManager: instanceVM) {
+                    hint(message, type: .critical)
                 }
-                let minecraftVersion: MinecraftVersion = .init(viewModel.version.id)
-                TaskManager.shared.execute(task: MinecraftInstallTask.create(name: viewModel.name, version: minecraftVersion, repository: repository, modLoader: viewModel.loader) { instance in
-                    instanceVM.switchInstance(to: instance, repository)
-                    if AppRouter.shared.getLast() == .tasks {
-                        AppRouter.shared.removeLast()
-                        if case .minecraftInstallOptions = AppRouter.shared.getLast() {
-                            AppRouter.shared.removeLast()
-                        }
-                    }
-                }, completion: { error in
-                    if let error {
-                        MessageBoxManager.shared.showText(
-                            title: "下载/安装失败",
-                            content: "任务执行失败：\(error.localizedDescription)\n\n请检查日志后重试。",
-                            level: .error
-                        )
-                    }
-                })
-                AppRouter.shared.append(.tasks)
             }
             .padding()
         }

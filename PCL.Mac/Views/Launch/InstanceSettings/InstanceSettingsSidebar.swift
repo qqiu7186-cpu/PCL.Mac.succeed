@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct InstanceSettingsSidebar: Sidebar {
-    let width: CGFloat = 140
+    let width: CGFloat = 128
     private let id: String
     
     init(id: String) {
@@ -16,11 +16,12 @@ struct InstanceSettingsSidebar: Sidebar {
     }
     
     var body: some View {
-        VStack {
-            MyText("游戏本体", size: 12, color: .colorGray2)
+        VStack(spacing: 0) {
+            MyText("游戏本体", size: 11, color: .colorGray3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 13)
-                .padding(.top, 10)
+                .padding(.leading, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
             MyNavigationList(
                 .init(.instanceOverview(id: id), "GameDownloadIcon", "概览"),
                 .init(.instanceConfig(id: id), "SettingsPageIcon", "设置"),
@@ -28,10 +29,11 @@ struct InstanceSettingsSidebar: Sidebar {
                 .init(.instanceExport(id: id), "DownloadPageIcon", "导出")
             )
 
-            MyText("游戏资源", size: 12, color: .colorGray2)
+            MyText("游戏资源", size: 11, color: .colorGray3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 13)
-                .padding(.top, 18)
+                .padding(.leading, 12)
+                .padding(.top, 14)
+                .padding(.bottom, 4)
             MyNavigationList(routeList: resourceRoutes)
             Spacer()
         }

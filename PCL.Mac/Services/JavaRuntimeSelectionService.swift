@@ -141,7 +141,7 @@ enum JavaRuntimeSelectionService {
 
     private static func preferredJavaDownloads(minVersion: Int, maxVersion: Int) async -> [JavaDownloadPackage] {
         do {
-            let viewModel = JavaSettingsViewModel()
+            let viewModel = await MainActor.run { JavaSettingsViewModel() }
             let architectures = preferredDownloadArchitectures(for: minVersion)
             var downloads: [JavaDownloadPackage] = []
             for architecture in architectures {

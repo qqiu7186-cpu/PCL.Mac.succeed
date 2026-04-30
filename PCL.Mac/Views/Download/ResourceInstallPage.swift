@@ -10,172 +10,182 @@ import Core
 
 struct ResourceInstallPage: View {
     @StateObject private var viewModel: ResourceInstallViewModel
-    @State private var currentPage: Int = 0
+    @StateObject private var favoritesStore: FavoriteProjectsStore = .shared
+    @State private var selectedGameVersionLine: String?
+    @State private var selectedLoader: ModLoader?
     
-    init(project: ProjectListItemModel) {
-        self._viewModel = StateObject(wrappedValue: .init(project: project))
+    init(target: ProjectInstallTarget) {
+        self._viewModel = StateObject(wrappedValue: .init(target: target))
     }
     
     var body: some View {
         CardContainer {
-            MyCard("", titled: false) {
-                ProjectListItemView(project: viewModel.project)
-            }
+            headerCard
+
             if viewModel.loaded, let versionList = viewModel.versionList {
-                if currentPage == 0, let selectedVersionGroup = viewModel.selectedVersionGroup {
-                    versionCard(versionGroup: selectedVersionGroup, isSelected: true, folded: false)
-                }
-                PaginatedContainer(versionList, id: \.0, currentPage: $currentPage, viewsPerPage: 10) { versionGroup in
-                    versionCard(versionGroup: versionGroup, folded: versionList.count == 1 ? false : true)
+                filtersCard(versionList: versionList)
+
+                if filteredVersionGroups(from: versionList).isEmpty {
+                    MyCard("版本列表", foldable: false) {
+                        MyText("当前筛选条件下没有可用版本。", color: .colorGray3)
+                    }
+                } else {
+                    ForEach(Array(filteredVersionGroups(from: versionList).enumerated()), id: \.element.0.id) { index, versionGroup in
+                        versionCard(
+                            versionGroup: versionGroup,
+                            isSelected: viewModel.selectedVersionGroup.map { $0.0 == versionGroup.0 } ?? false,
+                            folded: true
+                        )
+                        .cardIndex(index + 1)
+                    }
                 }
             } else {
                 MyLoading(viewModel: viewModel.loadingVM)
                     .cardIndex(1)
             }
         }
-        .task(id: viewModel.project) {
+        .task(id: viewModel.target) {
             do {
                 try await viewModel.load(selectedInstance: InstanceManager.shared.currentInstance)
             } catch is CancellationError {
             } catch {
-                err("加载\(viewModel.project.type) \(viewModel.project.title) 版本列表失败：\(error)")
+                err("加载\(viewModel.target.type) \(viewModel.target.title) 版本列表失败：\(error)")
                 viewModel.loadingVM.fail(with: "加载版本列表失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        MyCard("", titled: false, limitHeight: false) {
+            if let project = viewModel.project {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
+                        Group {
+                            if let iconURL = project.iconURL {
+                                NetworkImage(url: iconURL, targetSize: .init(width: 52, height: 52))
+                            } else {
+                                Image(defaultProjectIcon(for: project.type))
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(10)
+                                    .foregroundStyle(Color.color1)
+                            }
+                        }
+                        .frame(width: 52, height: 52)
+                        .background(Color.colorGray7)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            MyText(project.title, size: 18)
+                            MyText(project.description, color: .colorGray3)
+                                .lineLimit(2)
+
+                            HStack(spacing: 18) {
+                                HeaderInfoView(icon: "SettingsPageIcon", text: project.supportDescription)
+                                HeaderInfoView(icon: "DownloadPageIcon", text: project.downloads)
+                                HeaderInfoView(icon: "IconUpload", text: project.lastUpdate)
+                                HeaderInfoView(icon: "IconAbout", text: "Modrinth")
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                actionButton(icon: "IconAbout", text: "打开来源页", action: openProjectPage)
+                                actionButton(icon: "IconCopy", text: "复制项目 ID", action: copyProjectID)
+                                actionButton(icon: "IconCopy", text: "复制项目名", action: copyProjectName)
+                                actionButton(icon: favoritesStore.contains(project.id) ? "IconFavoriteFilled" : "IconFavorite", text: favoritesStore.contains(project.id) ? "取消收藏" : "收藏") {
+                                    favoritesStore.toggle(project.id, name: project.title)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                MyLoading(viewModel: .init(text: "正在加载项目详情"), showCard: false)
+            }
+        }
+    }
+
+    private func filtersCard(versionList: ResourceInstallViewModel.VersionList) -> some View {
+        let versions = availableGameVersions(from: versionList)
+        let loaders = availableLoaders(from: versionList)
+
+        return MyCard("", foldable: false, titled: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                if !versions.isEmpty {
+                    filterRow(title: "实例筛选") {
+                        chip("全部", selected: selectedGameVersionLine == nil) {
+                            selectedGameVersionLine = nil
+                        }
+                        ForEach(versions, id: \.self) { version in
+                            chip(version, selected: selectedGameVersionLine == version) {
+                                selectedGameVersionLine = version
+                            }
+                        }
+                    }
+                }
+
+                if !loaders.isEmpty {
+                    filterRow(title: "模组加载器筛选") {
+                        chip("全部", selected: selectedLoader == nil) {
+                            selectedLoader = nil
+                        }
+                        ForEach(loaders, id: \.rawValue) { loader in
+                            chip(loader.description, selected: selectedLoader == loader) {
+                                selectedLoader = loader
+                            }
+                        }
+                    }
+                }
             }
         }
     }
     
     private func onVersionTap(_ version: ProjectVersionModel) async throws {
-        guard let instance: MinecraftInstance = InstanceManager.shared.currentInstance else {
-            hint("请先安装并选择一个实例！", type: .critical)
-            return
-        }
-        
-        do {
-            try viewModel.checkInstance(instance, withVersion: version)
-        } catch let error as ResourceInstallViewModel.InstanceCheckError {
-            log("当前实例不满足该版本要求：\(error.localizedDescription)")
-            switch error {
-            case .versionUnsupported:
-                if !(await MessageBoxManager.shared.showConfirmAsync(
-                    title: "当前实例不符合要求",
-                    content: "\(error.localizedDescription)\n你可以选择继续安装，但游戏可能会发生崩溃或无法正常游玩。\n是否继续安装？",
-                    level: .error,
-                    cancelLabel: "取消",
-                    confirmLabel: "继续",
-                    confirmType: .red
-                )) {
-                    return
-                }
-            default:
-                await MessageBoxManager.shared.showErrorAsync(
-                    title: "当前实例不符合要求",
-                    content: error.localizedDescription
-                )
-                return
-            }
-        }
-
-        if await MessageBoxManager.shared.showConfirmAsync(
-            title: "确认",
-            content: "确定要安装 \(viewModel.project.title) \(version.version) 吗？"
-        ) {
-            do {
-                let task = try await viewModel.createInstallTask(forVersion: version, to: instance)
-                TaskManager.shared.execute(task: task)
-                AppRouter.shared.append(.tasks)
-            }
+        if let message = try await viewModel.confirmVersionInstall(for: version) {
+            hint(message, type: .critical)
         }
     }
     
     private func onModpackTap(_ version: ProjectVersionModel) async throws {
-        guard let repository: MinecraftRepository = InstanceManager.shared.currentRepository else {
-            hint("请先选择一个游戏目录！", type: .critical)
-            return
+        if let message = try await viewModel.confirmModpackInstall(for: version) {
+            hint(message, type: .critical)
         }
-        
-        guard await MessageBoxManager.shared.showConfirmAsync(
-            title: "确认",
-            content: "确定要安装整合包 \(viewModel.project.title) \(version.version) 吗？"
-        ) else { return }
-        
-        hint("开始下载整合包……")
-        
-        let (downloadTask, destination): (MyTask<EmptyModel>, URL)
-        do {
-            (downloadTask, destination) = try viewModel.createModpackDownloadTask(version)
-        } catch {
-            err("创建下载任务失败：\(error.localizedDescription)")
-            hint("创建下载任务失败：\(error.localizedDescription)", type: .critical)
-            return
-        }
-        
-        let downloadExecutorTask: Task<Void, Error> = TaskManager.shared.execute(task: downloadTask)
-        do {
-            try await downloadExecutorTask.value
-        } catch {
-            err("下载整合包失败：\(error.localizedDescription)")
-            hint("下载整合包失败：\(error.localizedDescription)", type: .critical)
-            return
-        }
-        
-        let index: ModrinthModpackIndex
-        do {
-            index = try viewModel.loadIndex(destination)
-        } catch {
-            err("加载整合包索引失败：\(error.localizedDescription)")
-            hint("加载整合包索引失败：\(error.localizedDescription)", type: .critical)
-            return
-        }
-        
-        guard var name: String = await MessageBoxManager.shared.showInputAsync(
-            title: "安装整合包 - 输入实例名",
-            initialContent: index.name
-        ) else { return }
-        
-        do {
-            name = try repository.checkInstanceName(name)
-        } catch {
-            hint("该名称不可用：\(error.localizedDescription)", type: .critical)
-            return
-        }
-        
-        let installTask: MyTask<ModrinthModpackInstallTask.Model>
-        do {
-            installTask = try ModrinthModpackInstallTask.create(
-                url: destination,
-                index: index,
-                repository: repository,
-                name: name
-            ) { instance in
-                InstanceManager.shared.switchInstance(to: instance, repository)
-                hint("整合包安装完成：\(instance.name)", type: .finish)
-            }
-        } catch {
-            err("创建安装任务失败：\(error.localizedDescription)")
-            hint("创建安装任务失败：\(error.localizedDescription)", type: .critical)
-            return
-        }
-        TaskManager.shared.execute(task: installTask)
-        AppRouter.shared.append(.tasks)
     }
     
     @ViewBuilder
     private func versionCard(versionGroup: ResourceInstallViewModel.VersionGroup, isSelected: Bool = false, folded: Bool = true) -> some View {
-        MyCard((isSelected ? "最佳版本：" : "") + versionGroup.0.description, folded: folded) {
+        MyCard((isSelected ? "推荐版本：" : "") + versionGroup.0.description, foldable: true, folded: folded) {
             let dependencies: [ProjectVersionModel.Dependency] = versionGroup.1[0].requiredDependencies
+            HStack(spacing: 10) {
+                if isSelected {
+                    chipBadge("推荐", highlighted: true)
+                }
+                chipBadge(versionGroup.0.version.id, highlighted: false)
+                if let loader = versionGroup.0.loader {
+                    chipBadge(loader.description, highlighted: false)
+                }
+                Spacer()
+                MyText("共 \(versionGroup.1.count) 个版本", size: 12, color: .colorGray2)
+            }
+            .padding(.bottom, 10)
+
             if !dependencies.isEmpty {
-                VStack(alignment: .leading) {
-                    MyText("前置资源")
+                VStack(alignment: .leading, spacing: 8) {
+                    MyText("前置资源", color: .colorGray2)
                     VStack(spacing: 0) {
                         ForEach(dependencies) { dependency in
                             ProjectListItemView(project: dependency.project)
                                 .onTapGesture {
-                                    AppRouter.shared.append(.projectInstall(project: dependency.project))
-                                }
+                                    viewModel.openDependencyProject(dependency.project)
+                            }
                         }
                     }
-                    MyText("版本列表")
+                    MyText("版本列表", color: .colorGray2)
                 }
+                .padding(.bottom, 6)
             }
             VStack(spacing: 0) {
                 ForEach(versionGroup.1) { version in
@@ -184,7 +194,7 @@ struct ResourceInstallPage: View {
                             log("\(version.name) \(version.version) 被点击")
                             Task {
                                 do {
-                                    if viewModel.project.type == .modpack {
+                                    if viewModel.target.type == .modpack {
                                         try await onModpackTap(version)
                                     } else {
                                         try await onVersionTap(version)
@@ -207,12 +217,164 @@ struct ResourceInstallPage: View {
             self.model = .init(
                 image: "\(version.type.rawValue.capitalized)Block",
                 name: version.name,
-                description: "\(version.version)，更新于\(version.datePublished)，\(version.type.localizedName)"
+                description: [
+                    version.version,
+                    version.loader?.description,
+                    version.gameVersion,
+                    version.datePublished,
+                    version.type.localizedName
+                ]
+                .compactMap { $0 }
+                .joined(separator: "，")
             )
         }
         
         var body: some View {
             MyListItem(model)
         }
+    }
+
+    private struct HeaderInfoView: View {
+        let icon: String?
+        let text: String
+
+        var body: some View {
+            HStack(spacing: 5) {
+                if let icon {
+                    Image(icon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 13)
+                        .foregroundStyle(Color.colorGray3)
+                }
+                MyText(text, size: 12, color: .colorGray3)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func filterRow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            MyText("\(title)：", color: .colorGray2)
+                .lineLimit(1)
+                .frame(width: 126, alignment: .leading)
+                .frame(minHeight: 28, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    content()
+                }
+                .padding(.vertical, 1)
+            }
+        }
+    }
+
+    private func chip(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            MyText(text, color: selected ? .white : .color3)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background {
+                    Capsule()
+                        .fill(selected ? Color.color3 : Color.color8)
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func chipBadge(_ text: String, highlighted: Bool) -> some View {
+        MyText(text, size: 12, color: highlighted ? .white : .color2)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background {
+                Capsule()
+                    .fill(highlighted ? Color.color3 : Color.color8)
+            }
+    }
+
+    private func actionButton(icon: String, text: String, action: @escaping () -> Void) -> some View {
+        actionButton(icon: icon, systemIcon: nil, text: text, action: action)
+    }
+
+    private func actionButton(systemIcon: String, text: String, action: @escaping () -> Void) -> some View {
+        actionButton(icon: nil, systemIcon: systemIcon, text: text, action: action)
+    }
+
+    private func actionButton(icon: String?, systemIcon: String?, text: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let icon {
+                    Image(icon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 13, height: 13)
+                        .foregroundStyle(Color.color1)
+                } else if let systemIcon {
+                    Image(systemName: systemIcon)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                MyText(text, size: 12, color: .color1)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background {
+                Capsule()
+                    .fill(Color.white)
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.colorGray6, lineWidth: 1)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func availableGameVersions(from versionList: ResourceInstallViewModel.VersionList) -> [String] {
+        Array(Set(versionList.map { versionLine(for: $0.0.version.id) })).sorted { lhs, rhs in
+            MinecraftVersion(lhs) > MinecraftVersion(rhs)
+        }
+    }
+
+    private func availableLoaders(from versionList: ResourceInstallViewModel.VersionList) -> [ModLoader] {
+        Array(Set(versionList.compactMap { $0.0.loader })).sorted { $0.index < $1.index }
+    }
+
+    private func filteredVersionGroups(from versionList: ResourceInstallViewModel.VersionList) -> ResourceInstallViewModel.VersionList {
+        versionList.filter { group in
+            let matchesVersion = selectedGameVersionLine == nil || versionLine(for: group.0.version.id) == selectedGameVersionLine
+            let matchesLoader = selectedLoader == nil || group.0.loader == selectedLoader
+            return matchesVersion && matchesLoader
+        }
+    }
+
+    private func versionLine(for version: String) -> String {
+        let parts = version.split(separator: ".")
+        guard parts.count >= 2 else { return version }
+        return "\(parts[0]).\(parts[1])"
+    }
+
+    private func defaultProjectIcon(for type: ModrinthProjectType) -> String {
+        switch type {
+        case .mod: "IconMod"
+        case .modpack: "IconBox"
+        case .resourcepack: "IconPicture"
+        case .shader: "IconSun"
+        }
+    }
+
+    private func openProjectPage() {
+        guard let url = URL(string: "https://modrinth.com/project/\(viewModel.target.id)") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func copyProjectID() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(viewModel.target.id, forType: .string)
+        hint("已复制项目 ID。", type: .finish)
+    }
+
+    private func copyProjectName() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(viewModel.target.title, forType: .string)
+        hint("已复制项目名称。", type: .finish)
     }
 }

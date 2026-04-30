@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 import Core
 
 struct ToolboxPage: View {
@@ -22,6 +23,21 @@ struct ToolboxPage: View {
                             content: "你今天的人品值是：\(viewModel.formatLucky(lucky))",
                             level: lucky <= 30 ? .error : .info
                         )
+                    }
+                    .frame(width: 100)
+
+                    MyButton("导出诊断") {
+                        Task {
+                            do {
+                                let exportDirectory = try await DiagnosticsExportService.exportToUserSelectedDirectory()
+                                NSWorkspace.shared.open(exportDirectory)
+                                hint("诊断信息已导出", type: .finish)
+                            } catch {
+                                if error.localizedDescription != "已取消导出。" {
+                                    hint(AppError.wrap(error, category: .fileSystem, action: "导出诊断失败").localizedDescription, type: .critical)
+                                }
+                            }
+                        }
                     }
                     .frame(width: 100)
                     
@@ -58,8 +74,9 @@ struct ToolboxPage: View {
                 do {
                     try await viewModel.fetchCaveMessages()
                 } catch {
-                    err("加载回声洞消息列表失败：\(error.localizedDescription)")
-                    hint("加载回声洞消息列表失败：\(error.localizedDescription)", type: .critical)
+                    let wrappedError = AppError.wrap(error, category: .network, action: "加载回声洞消息列表失败")
+                    err(wrappedError.localizedDescription)
+                    hint(wrappedError.localizedDescription, type: .critical)
                 }
             }
         }

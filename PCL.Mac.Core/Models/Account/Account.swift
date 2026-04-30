@@ -58,13 +58,14 @@ public extension Account {
     var type: AccountType {
         switch self {
         case is OfflineAccount:
-            .offline
+            return AccountType.offline
         case is MicrosoftAccount:
-            .microsoft
+            return AccountType.microsoft
         case is ThirdPartyAccount:
-            .thirdParty
+            return AccountType.thirdParty
         default:
-            fatalError() // unreachable
+            assertionFailure("发现未登记的账号类型：\(String(describing: Self.self))")
+            return AccountType.offline
         }
     }
 

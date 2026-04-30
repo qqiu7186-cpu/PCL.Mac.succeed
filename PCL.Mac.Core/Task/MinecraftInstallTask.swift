@@ -26,12 +26,14 @@ public enum MinecraftInstallTask {
         version: MinecraftVersion,
         repository: MinecraftRepository,
         modLoader: Loader?,
+        replaceExisting: Bool = false,
         completion: ((MinecraftInstance) -> Void)? = nil
     ) -> MyTask<Model> {
         let model: Model = .init(
             name: name,
             version: version,
-            repository: repository
+            repository: repository,
+            replaceExisting: replaceExisting
         )
         var subTasks: [SubTask] = [
             .init(0, "__pre", display: false) { _, model in
@@ -47,6 +49,7 @@ public enum MinecraftInstallTask {
                     versionManifest: versionManifest,
                     versionId: version.id,
                     runningDirectory: model.runningDirectory,
+                    replaceExisting: model.replaceExisting,
                     progressHandler: task.setProgress(_:)
                 )
                 model.manifest = manifest
@@ -63,6 +66,7 @@ public enum MinecraftInstallTask {
                 try await downloadClient(
                     clientDownload: model.manifest.downloads.client,
                     runningDirectory: model.runningDirectory,
+                    replaceExisting: model.replaceExisting,
                     progressHandler: task.setProgress(_:)
                 )
             },
@@ -189,6 +193,7 @@ public enum MinecraftInstallTask {
         }
         
         return .init(name: "\(name) 安装", model: model, subTasks) { _ in
+            guard !replaceExisting else { return }
             try? FileManager.default.removeItem(at: repository.versionsURL.appending(path: name))
         }
     }
@@ -210,6 +215,7 @@ public enum MinecraftInstallTask {
             try await downloadClient(
                 clientDownload: downloads.client,
                 runningDirectory: runningDirectory,
+                replaceExisting: false,
                 progressHandler: progressHandler.handler(withMultiplier: 0.15)
             )
         } else {
@@ -246,6 +252,7 @@ public enum MinecraftInstallTask {
         versionManifest: VersionManifest,
         versionId: String,
         runningDirectory: URL,
+        replaceExisting: Bool,
         progressHandler: @MainActor @escaping (Double) -> Void
     ) async throws -> ClientManifest {
         guard let version = versionManifest.version(for: versionId) else {
@@ -258,7 +265,7 @@ public enum MinecraftInstallTask {
             url: version.url,
             destination: destination,
             sha1: nil,
-            replaceMethod: .skip,
+            replaceMethod: replaceExisting ? .replace : .skip,
             progressHandler: progressHandler
         )
         return try JSONDecoder.shared.decode(ClientManifest.self, from: Data(contentsOf: destination))
@@ -284,13 +291,14 @@ public enum MinecraftInstallTask {
     private static func downloadClient(
         clientDownload: ClientManifest.Downloads.Download,
         runningDirectory: URL,
+        replaceExisting: Bool,
         progressHandler: @MainActor @escaping (Double) -> Void
     ) async throws {
         try await SingleFileDownloader.download(
             url: clientDownload.url,
             destination: runningDirectory.appending(path: "\(runningDirectory.lastPathComponent).jar"),
             sha1: clientDownload.sha1,
-            replaceMethod: .skip,
+            replaceMethod: replaceExisting ? .replace : .skip,
             progressHandler: progressHandler
         )
     }
@@ -364,6 +372,7 @@ public enum MinecraftInstallTask {
         public let version: MinecraftVersion
         public let runningDirectory: URL
         public let repository: MinecraftRepository
+        public let replaceExisting: Bool
         
         public var manifest: ClientManifest!
         public var mappedManifest: ClientManifest!
@@ -373,11 +382,12 @@ public enum MinecraftInstallTask {
         
         public var forgeInstallService: ForgeInstallService?
         
-        public init(name: String, version: MinecraftVersion, repository: MinecraftRepository) {
+        public init(name: String, version: MinecraftVersion, repository: MinecraftRepository, replaceExisting: Bool) {
             self.name = name
             self.version = version
             self.runningDirectory = repository.versionsURL.appending(path: name)
             self.repository = repository
+            self.replaceExisting = replaceExisting
         }
     }
     

@@ -186,6 +186,10 @@ public enum MinecraftLaunchTask {
     }
     
     private static func checkResources(task: SubTask, model: Model) async throws {
+        if model.options.skipResourceValidation {
+            log("已根据实例设置跳过资源完整性检查")
+            return
+        }
         try await MinecraftLaunchPreparationService.checkResources(model: model) { progress in
             DispatchQueue.main.async {
                 task.setProgress(progress)
@@ -195,6 +199,16 @@ public enum MinecraftLaunchTask {
     
     private static func launch(task: SubTask, model: Model) async throws {
         LauncherConfig.shared.launchCount += 1
+        if let preLaunchCommand = model.options.preLaunchCommand?.trimmingCharacters(in: .whitespacesAndNewlines), !preLaunchCommand.isEmpty {
+            let result = runPreLaunchCommand(preLaunchCommand, in: model.options.runningDirectory)
+            guard result.status == 0 else {
+                let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                let content = output.isEmpty ? "启动前命令执行失败，退出码：\(result.status)" : "启动前命令执行失败，退出码：\(result.status)\n\n\(output)"
+                await MessageBoxManager.shared.showErrorAsync(title: "启动前命令失败", content: content)
+                try task.cancel()
+                return
+            }
+        }
         let launcher: MinecraftLauncher = .init(options: model.options)
         model.launcher = launcher
         do {
@@ -340,7 +354,7 @@ public enum MinecraftLaunchTask {
 
     private static func preferredJavaDownloads(minVersion: Int, maxVersion: Int) async -> [JavaDownloadPackage] {
         do {
-            let viewModel = JavaSettingsViewModel()
+            let viewModel = await MainActor.run { JavaSettingsViewModel() }
         let architectures = preferredDownloadArchitectures(for: minVersion)
             var downloads: [JavaDownloadPackage] = []
             for architecture in architectures {
@@ -687,7 +701,27 @@ public enum MinecraftLaunchTask {
             self.options.profile = account.profile
             self.options.runningDirectory = instance.runningDirectory
             self.options.repository = repository
-            self.options.memory = instance.config.jvmHeapSize
+            InstancePageActionService.applyInstanceSettings(instance: instance, to: &self.options)
+        }
+    }
+
+    private static func runPreLaunchCommand(_ command: String, in directory: URL) -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", command]
+        process.currentDirectoryURL = directory
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        } catch {
+            return (1, error.localizedDescription)
         }
     }
 }

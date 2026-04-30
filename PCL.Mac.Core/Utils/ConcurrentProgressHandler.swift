@@ -37,7 +37,7 @@ public class ConcurrentProgressHandler {
     /// - Parameter interval: 计算间隔，默认为 0.1s。
     public func startCalculate(interval: Double = 0.1) {
         if calculateTask != nil { return }
-        calculateTask = Task.detached { [weak self] in
+        calculateTask = Task(priority: .utility) { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.totalHandler(await self.calculateProgress())

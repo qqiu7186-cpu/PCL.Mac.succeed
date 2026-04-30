@@ -9,7 +9,6 @@ import SwiftUI
 
 struct MyListItem<Content: View>: View {
     @State private var hovered: Bool = false
-    @State private var backgroundScale: CGFloat = 0.92
     private let content: (Bool) -> Content
     
     init(_ content: @escaping (Bool) -> Content) {
@@ -61,18 +60,9 @@ struct MyListItem<Content: View>: View {
             .background {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(hovered ? Color.color2.opacity(0.1) : .clear)
-                    .scaleEffect(backgroundScale)
             }
-            .onHover { hovered in
-                withAnimation(.spring(response: 0.2)) {
-                    self.hovered = hovered
-                    if hovered {
-                        backgroundScale = 1
-                    } else {
-                        backgroundScale = 0.92
-                    }
-                }
-            }
+            .animation(.easeOut(duration: 0.12), value: hovered)
+            .onHover { hovered = $0 }
     }
 }
 

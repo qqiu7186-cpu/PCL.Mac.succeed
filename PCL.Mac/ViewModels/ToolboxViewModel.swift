@@ -107,6 +107,11 @@ class ToolboxViewModel: ObservableObject {
             }
         case 3:
             easterEggManager.modifyColor = true
+            Task { @MainActor in
+                try? await Task.sleep(seconds: 3)
+                easterEggManager.modifyColor = false
+                easterEggManager.enabled = false
+            }
         default:
             break
         }

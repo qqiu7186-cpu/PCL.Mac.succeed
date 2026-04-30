@@ -14,72 +14,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: AppWindow!
     private lazy var isUnderTesting: Bool = ProcessInfo.processInfo.environment["PCL_MAC_TESTING"] != nil
     private var keyMonitor: Any?
-    
-    private func executeTask(_ name: String, silent: Bool = false, _ start: @escaping () throws -> Void) {
-        do {
-            try start()
-            if !silent {
-                log("\(name)成功")
-            }
-        } catch {
-            err("\(name)失败：\(error.localizedDescription)")
-        }
-    }
-    
-    private func executeAsyncTask(_ name: String, silent: Bool = false, _ start: @escaping () async throws -> Void) {
-        Task {
-            do {
-                try await start()
-                if !silent {
-                    log("\(name)成功")
-                }
-            } catch {
-                err("\(name)失败：\(error.localizedDescription)")
-            }
-        }
-    }
-    
+     
     func applicationWillFinishLaunching(_ notification: Notification) {
-        URLConstants.createDirectories()
-        LogManager.shared.enableLogging()
-        log("正在启动 PCL.Mac.Refactor \(Metadata.appVersion)")
-        executeTask("开启 SwiftScaffolding 日志", silent: true) {
-            try SwiftScaffolding.Logger.enableLogging(url: URLConstants.logsDirectoryURL.appending(path: "swift-scaffolding.log"))
-        }
-        executeTask("清理临时文件") {
-            for url in try FileManager.default.contentsOfDirectory(at: URLConstants.tempURL, includingPropertiesForKeys: nil) {
-                try FileManager.default.removeItem(at: url)
-            }
-        }
-        executeTask("从缓存中加载版本列表") {
-            let cacheURL: URL = URLConstants.cacheURL.appending(path: "version_manifest.json")
-            if FileManager.default.fileExists(atPath: cacheURL.path) {
-                let cachedData: Data = try .init(contentsOf: URLConstants.cacheURL.appending(path: "version_manifest.json"))
-                let manifest: VersionManifest = try JSONDecoder.shared.decode(VersionManifest.self, from: cachedData)
-                CoreState.versionManifest = manifest
-            } else {
-                self.executeAsyncTask("拉取版本列表") {
-                    let response = try await Requests.get("https://launchermeta.mojang.com/mc/game/version_manifest.json")
-                    let manifest: VersionManifest = try response.decode(VersionManifest.self)
-                    CoreState.versionManifest = manifest
-                    try response.data.write(to: cacheURL)
-                }
-            }
-        }
-        
-        if !isUnderTesting {
-            _ = LauncherConfig.shared
-            _ = JavaManager.shared
-            executeTask("加载字体") {
-                let fontURL: URL = URLConstants.resourcesURL.appending(path: "PCL.ttf")
-                var error: Unmanaged<CFError>?
-                CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, &error)
-                if let error = error?.takeUnretainedValue() { throw error }
-            }
-            executeTask("加载版本缓存") {
-                try VersionCache.load()
-            }
-        }
+        AppBootstrapService.shared.runInitialBootstrap(isUnderTesting: isUnderTesting)
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -116,11 +53,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        executeTask("保存版本缓存") {
+        do {
             try VersionCache.save()
+            log("保存版本缓存成功")
+        } catch {
+            err("保存版本缓存失败：\(error.localizedDescription)")
         }
-        executeTask("保存启动器配置") {
+        do {
             try LauncherConfig.save()
+            log("保存启动器配置成功")
+        } catch {
+            err("保存启动器配置失败：\(error.localizedDescription)")
         }
         EasyTierManager.shared.terminateAll()
     }

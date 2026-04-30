@@ -9,6 +9,9 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
+    env:
+      XCODE_PROJECT: PCL.Mac.xcodeproj
+      XCODE_SCHEME: PCL.Mac
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,10 +31,10 @@ jobs:
 
       - name: Build app
         run: |
-          xcodebuild \
-            -project PCL.Mac.xcodeproj -scheme PCL.Mac -configuration Release \
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release \
             CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
-            -archivePath build archive
+            -archivePath build
 
       - name: Prepare release assets
         run: |

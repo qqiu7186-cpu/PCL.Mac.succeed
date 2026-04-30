@@ -11,104 +11,96 @@ import Core
 struct InstanceListPage: View {
     @EnvironmentObject private var instanceViewModel: InstanceManager
     @EnvironmentObject private var viewModel: InstanceListViewModel
+    @State private var query: String = ""
+    @FocusState private var searchFocused: Bool
+    private let target: RepositoryRouteTarget
     @ObservedObject private var repository: MinecraftRepository
     
-    init(repository: MinecraftRepository) {
-        self.repository = repository
+    init(target: RepositoryRouteTarget) {
+        self.target = target
+        self.repository = InstanceManager.shared.repository(matching: target.repositoryPath) ?? .init(name: target.name, url: URL(fileURLWithPath: target.repositoryPath))
     }
     
     var body: some View {
-        VStack {
-            if let instances = repository.instances {
-                CardContainer {
-                    MyCard("当前目录：\(repository.name)", foldable: false) {
-                        infoLine(label: "路径") { MyText(repository.url.path).textSelection(.enabled) }
-                            .padding(.top, 6)
-                        infoLine(label: "实例数") { MyText(instances.count.description) }
-                        HStack(spacing: 15) {
-                            MyButton("打开文件夹") {
-                                NSWorkspace.shared.open(repository.url)
-                            }
-                            .frame(width: 150)
-                            MyButton("编辑目录信息") {
-                                MessageBoxManager.shared.showInput(title: "输入目录名", initialContent: repository.name) { name in
-                                    guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        ZStack {
+            LinearGradient(
+                colors: [Color.color5.opacity(0.55), Color.color7.opacity(0.9), Color.color8],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
 
-                                    let panel: NSOpenPanel = .init()
-                                    panel.allowsMultipleSelection = false
-                                    panel.canChooseFiles = false
-                                    panel.canChooseDirectories = true
-                                    panel.allowedContentTypes = [.folder]
-                                    panel.directoryURL = repository.url
-                                    panel.message = "选择新的游戏目录（可与当前目录相同）"
+            VStack(spacing: 0) {
+                if repository.instances != nil {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            searchBar
+                                .padding(.top, 12)
 
-                                    guard panel.runModal() == .OK, let newURL = panel.url else { return }
-
-                                    do {
-                                        try instanceViewModel.editRepository(repository, newName: name, newURL: newURL)
-                                        AppRouter.shared.setRoot(.launch)
-                                        DispatchQueue.main.async {
-                                            AppRouter.shared.append(.instanceList(repository))
+                            if let errorInstances = repository.errorInstances, !errorInstances.isEmpty {
+                                MyCard("错误实例（\(errorInstances.count)）", foldable: false, padding: 14) {
+                                    VStack(spacing: 0) {
+                                        ForEach(errorInstances, id: \.name) { instance in
+                                            MyListItem(.init(image: "RedstoneBlock", name: instance.name, description: instance.message))
                                         }
-                                        hint("目录信息已更新！", type: .finish)
-                                    } catch {
-                                        hint("更新目录失败：\(error.localizedDescription)", type: .critical)
                                     }
                                 }
                             }
-                            .frame(width: 150)
-                            MyButton("移除目录", type: .red) {
-                                MessageBoxManager.shared.showText(
-                                    title: "确认",
-                                    content: "你确定要移除这个目录（\(repository.url.path)）吗？\n这只会把它从启动器的目录列表中移除，而不会删除任何文件。",
-                                    level: .info,
-                                    .no(), .yes()
-                                ) { button in
-                                    guard button == 1 else { return }
-                                    instanceViewModel.removeRepository(repository)
-                                    AppRouter.shared.removeLast()
-                                    hint("移除成功！", type: .finish)
+
+                            if filteredRegularInstances.isEmpty && filteredModdedInstances.isEmpty {
+                                MyCard("实例列表", foldable: false, padding: 14) {
+                                    emptyState
                                 }
-                            }
-                            .frame(width: 150)
-                            Spacer()
-                        }
-                        .frame(height: 35)
-                        .padding(.top, 6)
-                    }
-                    if let errorInstances = repository.errorInstances, !errorInstances.isEmpty {
-                        MyCard("错误的实例") {
-                            VStack(spacing: 0) {
-                                ForEach(errorInstances, id: \.name) { instance in
-                                    MyListItem(.init(image: "RedstoneBlock", name: instance.name, description: instance.message))
+                            } else {
+                                if !filteredRegularInstances.isEmpty {
+                                    sectionCard(title: "常规实例", instances: filteredRegularInstances, cardIndex: 1)
+                                }
+
+                                if !filteredModdedInstances.isEmpty {
+                                    sectionCard(
+                                        title: "可安装 Mod",
+                                        instances: filteredModdedInstances,
+                                        cardIndex: filteredRegularInstances.isEmpty ? 1 : 2
+                                    )
                                 }
                             }
                         }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 18)
                     }
-                    let moddedInstances: [MinecraftInstance] = instances.filter { $0.modLoader != nil }
-                    if !moddedInstances.isEmpty {
-                        MyCard("可安装 Mod") {
-                            instanceList(moddedInstances)
-                        }
-                        .cardIndex(1)
-                    }
-                    let vanillaInstances: [MinecraftInstance] = instances.filter { !moddedInstances.contains($0) }
-                    if !vanillaInstances.isEmpty {
-                        MyCard("常规实例") {
-                            instanceList(vanillaInstances)
-                        }
-                        .cardIndex(moddedInstances.isEmpty ? 1 : 2)
-                    }
+                } else {
+                    MyLoading(viewModel: viewModel.loadingViewModel, showCard: false)
                 }
-            } else {
-                MyLoading(viewModel: viewModel.loadingViewModel)
             }
         }
         .onAppear {
             if repository.instances != nil { return }
             viewModel.reloadAsync(repository)
         }
-        .id(repository.url)
+        .id(target.id)
+    }
+
+    private var filteredRegularInstances: [MinecraftInstance] {
+        filteredInstances.filter { $0.modLoader == nil }
+    }
+
+    private var filteredModdedInstances: [MinecraftInstance] {
+        filteredInstances.filter { $0.modLoader != nil }
+    }
+
+    private var filteredInstances: [MinecraftInstance] {
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allInstances = repository.instances ?? []
+        guard !keyword.isEmpty else {
+            return allInstances.sorted(by: compareInstance(lhs:rhs:))
+        }
+
+        return allInstances
+            .filter {
+                $0.name.localizedCaseInsensitiveContains(keyword) ||
+                $0.version.id.localizedCaseInsensitiveContains(keyword) ||
+                ($0.modLoader?.description.localizedCaseInsensitiveContains(keyword) ?? false)
+            }
+            .sorted(by: compareInstance(lhs:rhs:))
     }
     
     private func compareInstance(lhs: MinecraftInstance, rhs: MinecraftInstance) -> Bool {
@@ -118,43 +110,84 @@ struct InstanceListPage: View {
         return (lhs.modLoader?.index ?? -1) > (rhs.modLoader?.index ?? -1)
     }
     
-    @ViewBuilder
-    private func instanceList(_ instances: [MinecraftInstance]) -> some View {
-        VStack(spacing: 0) {
-            ForEach(instances.sorted(by: compareInstance(lhs:rhs:)), id: \.name) { instance in
-                InstanceView(instance: instance)
-                    .onTapGesture {
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image("IconSearch")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 15, height: 15)
+                .foregroundStyle(Color.color1)
+
+            ZStack(alignment: .leading) {
+                TextField("", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.custom("PCLEnglish", size: 14))
+                    .foregroundStyle(Color.color1)
+                    .focused($searchFocused)
+
+                if query.isEmpty {
+                    Text("搜索游戏实例")
+                        .font(.custom("PCLEnglish", size: 14))
+                        .foregroundStyle(Color.colorGray3)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(Color.white.opacity(0.82))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Color.color6, lineWidth: 1)
+                )
+        )
+    }
+
+    private func sectionCard(title: String, instances: [MinecraftInstance], cardIndex: Int) -> some View {
+        MyCard("\(title)（\(instances.count)）", folded: false, padding: 14) {
+            VStack(spacing: 0) {
+                ForEach(instances, id: \.name) { instance in
+                    InstanceSelectionRow(
+                        instance: instance,
+                        selected: isCurrentSelection(instance)
+                    ) {
                         instanceViewModel.switchInstance(to: instance, repository)
                         AppRouter.shared.removeLast()
                     }
+                }
             }
         }
+        .cardIndex(cardIndex)
     }
-    
-    @ViewBuilder
-    private func infoLine(label: String,  @ViewBuilder body: () -> some View) -> some View {
-        HStack(spacing: 20) {
-            MyText(label)
-                .frame(width: 120, alignment: .leading)
-            HStack {
-                Spacer(minLength: 0)
-                body()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+    private func isCurrentSelection(_ instance: MinecraftInstance) -> Bool {
+        instanceViewModel.currentRepository == repository && instanceViewModel.currentInstance == instance
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            MyText(query.isEmpty ? "这个目录里还没有可用实例。" : "没有找到匹配的实例。", size: 13)
+            MyText(query.isEmpty ? "你可以在左侧添加目录，或导入整合包后再来这里选择。" : "试试搜索实例名、版本号，或者模组加载器名称。", size: 11.5, color: .colorGray3)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct InstanceView: View {
+private struct InstanceSelectionRow: View {
     private let name: String
     private let version: MinecraftVersion
     private let iconName: String
+    private let selected: Bool
+    private let onTap: () -> Void
+    @State private var hovered: Bool = false
     
-    init(instance: MinecraftInstance) {
+    init(instance: MinecraftInstance, selected: Bool, onTap: @escaping () -> Void) {
         self.name = instance.name
         self.version = instance.version
+        self.selected = selected
+        self.onTap = onTap
         if let modLoader = instance.modLoader {
             self.iconName = modLoader.icon
         } else {
@@ -163,6 +196,29 @@ private struct InstanceView: View {
     }
     
     var body: some View {
-        MyListItem(.init(image: iconName, name: name, description: version.id))
+        HStack(spacing: 10) {
+            Image(iconName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                MyText(name, size: 13)
+                MyText(version.id, size: 11, color: .colorGray3)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(selected ? Color.color2.opacity(0.12) : (hovered ? Color.color2.opacity(0.08) : .clear))
+        )
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .onTapGesture(perform: onTap)
+        .animation(.easeInOut(duration: 0.12), value: hovered)
+        .animation(.easeInOut(duration: 0.12), value: selected)
     }
 }

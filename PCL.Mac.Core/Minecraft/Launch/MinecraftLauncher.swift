@@ -13,6 +13,7 @@ public class MinecraftLauncher {
     public let logURL: URL
     private let manifest: ClientManifest
     private let runningDirectory: URL
+    private let instanceDirectory: URL
     private let librariesURL: URL
     private let effectiveMemoryMB: UInt64
     private let effectiveMinMemoryMB: UInt64
@@ -21,6 +22,7 @@ public class MinecraftLauncher {
     public init(options: LaunchOptions) {
         self.manifest = options.manifest
         self.runningDirectory = options.runningDirectory
+        self.instanceDirectory = options.instanceDirectory ?? options.runningDirectory
         self.librariesURL = options.repository.librariesURL
         self.options = options
         self.logURL = URLConstants.tempURL.appending(path: "game-log-\(UUID().uuidString.lowercased()).log")
@@ -28,7 +30,7 @@ public class MinecraftLauncher {
         self.effectiveMemoryMB = tunedMemory
         self.effectiveMinMemoryMB = max(512, min(1024, tunedMemory / 4))
         self.values = [
-            "natives_directory": runningDirectory.appending(path: "natives").path,
+            "natives_directory": instanceDirectory.appending(path: "natives").path,
             "launcher_name": "PCL.Mac",
             "launcher_version": Metadata.appVersion,
             "classpath_separator": ":",
@@ -39,7 +41,7 @@ public class MinecraftLauncher {
             "minMemory": "\(self.effectiveMinMemoryMB)M",
             
             "auth_player_name": options.profile.name,
-            "version_name": options.runningDirectory.lastPathComponent,
+            "version_name": Self.effectiveWindowTitle(options: options),
             "game_directory": runningDirectory.path,
             "assets_root": librariesURL.deletingLastPathComponent().appending(path: "assets").path,
             "assets_index_name": manifest.assetIndex.id,
@@ -110,8 +112,26 @@ public class MinecraftLauncher {
 
         var arguments: [String] = []
         arguments.append(contentsOf: manifest.jvmArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
+
+        if let customWindowTitle = options.customWindowTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !customWindowTitle.isEmpty {
+            arguments.insert("-Xdock:name=\(customWindowTitle)", at: 0)
+        }
+        if options.enableLog4jDebug {
+            arguments.insert("-Dlog4j2.debug=true", at: 0)
+        }
+        if !options.additionalJVMArguments.isEmpty {
+            arguments.insert(contentsOf: options.additionalJVMArguments, at: 0)
+        }
+
         arguments.append(manifest.mainClass)
         arguments.append(contentsOf: manifest.gameArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
+        if let autoJoinServer = options.autoJoinServer {
+            arguments.append(contentsOf: ["--server", autoJoinServer.host])
+            if let port = autoJoinServer.port {
+                arguments.append(contentsOf: ["--port", String(port)])
+            }
+        }
+        arguments.append(contentsOf: options.additionalGameArguments)
         arguments = arguments.map { Utils.replace($0, withValues: values) }
         arguments = arguments.map(sanitizeUnresolvedPlaceholders)
         arguments = removeEmptyOptionalArguments(arguments)
@@ -164,14 +184,14 @@ public class MinecraftLauncher {
     }
     
     private func buildClasspath() -> String {
-        var urls: [URL] = []
+        var entries: [String] = options.classpathPrefixEntries
         for library in manifest.getLibraries() {
             if let artifact = library.artifact {
-                urls.append(librariesURL.appending(path: artifact.path))
+                entries.append(librariesURL.appending(path: artifact.path).path)
             }
         }
-        urls.append(runningDirectory.appending(path: "\(runningDirectory.lastPathComponent).jar"))
-        return urls.map(\.path).joined(separator: ":")
+        entries.append(instanceDirectory.appending(path: "\(instanceDirectory.lastPathComponent).jar").path)
+        return entries.joined(separator: ":")
     }
 
     private static func applyRuntimePerformanceDefaults(
@@ -328,6 +348,11 @@ public class MinecraftLauncher {
 
     private func sanitizedLaunchEnvironment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
+        if !options.followProxyEnvironment {
+            ["http_proxy", "https_proxy", "all_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "no_proxy", "NO_PROXY"].forEach {
+                environment.removeValue(forKey: $0)
+            }
+        }
         guard options.javaRuntime.majorVersion >= 25 && options.javaRuntime.architecture == .arm64 else {
             return environment
         }
@@ -348,5 +373,12 @@ public class MinecraftLauncher {
         let upperBound = min(UInt64(16384), maxSafeByDevice)
         let lowerBound: UInt64 = 1024
         return min(max(requested, lowerBound), upperBound)
+    }
+
+    private static func effectiveWindowTitle(options: LaunchOptions) -> String {
+        if let title = options.customWindowTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        return (options.instanceDirectory ?? options.runningDirectory).lastPathComponent
     }
 }

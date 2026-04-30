@@ -8,6 +8,14 @@
 import Foundation
 
 public class ModrinthAPIClient {
+    public enum SearchIndex: String, CaseIterable, Codable {
+        case relevance
+        case downloads
+        case follows
+        case newest
+        case updated
+    }
+
     public static let shared: ModrinthAPIClient = .init(apiRoot: URL(string: "https://api.modrinth.com")!)
     
     private let apiRoot: URL
@@ -28,13 +36,18 @@ public class ModrinthAPIClient {
         type: ModrinthProjectType,
         _ query: String?,
         forVersion gameVersion: String?,
+        loaders: [ModLoader] = [],
         requiredCategories: [String] = [],
+        index: SearchIndex = .relevance,
         pageIndex: Int = 0,
         limit: Int = 40
     ) async throws -> SearchResponse {
         var facets: [[String]] = [["project_type:\(type)"]]
         if let gameVersion {
             facets.append(["versions:\(gameVersion)"])
+        }
+        for loader in loaders {
+            facets.append(["categories:\(loader.rawValue)"])
         }
         for category in requiredCategories {
             facets.append(["categories:\(category)"])
@@ -46,6 +59,7 @@ public class ModrinthAPIClient {
             params: [
                 "query": query == "" ? nil : query,
                 "facets": facetsString,
+                "index": index.rawValue,
                 "limit": String(describing: limit),
                 "offset": String(describing: pageIndex * limit)
             ]

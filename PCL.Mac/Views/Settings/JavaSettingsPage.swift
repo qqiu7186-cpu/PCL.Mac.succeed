@@ -17,12 +17,12 @@ struct JavaSettingsPage: View {
                 HStack {
                     MyButton("刷新 Java 列表") {
                         do {
-                            try JavaManager.shared.research()
-                            viewModel.reloadJavaList()
+                            try viewModel.refreshJavaList()
                             hint("刷新成功！", type: .finish)
                         } catch {
-                            err("刷新 Java 列表失败：\(error.localizedDescription)")
-                            hint("刷新 Java 列表失败：\(error.localizedDescription)", type: .critical)
+                            let wrappedError = AppError.wrap(error, category: .runtime, action: "刷新 Java 列表失败")
+                            err(wrappedError.localizedDescription)
+                            hint(wrappedError.localizedDescription, type: .critical)
                         }
                     }
                     .frame(width: 120)
@@ -30,17 +30,11 @@ struct JavaSettingsPage: View {
                     MyButton("安装 Java") {
                         Task {
                             do {
-                                let downloads: [JavaDownloadPackage] = try await viewModel.javaDownloads()
-                                if let index: Int = await MessageBoxManager.shared.showListAsync(
-                                    title: "选择 Java 版本",
-                                    items: downloads.map(viewModel.listItem(forJavaDownload:))
-                                ) {
-                                    TaskManager.shared.execute(task: JavaInstallTask.create(download: downloads[index], replaceExisting: true))
-                                    AppRouter.shared.append(.tasks)
-                                }
+                                try await viewModel.startInstallJavaFlow()
                             } catch {
-                                err("拉取 Java 列表失败：\(error.localizedDescription)")
-                                hint("拉取 Java 列表失败：\(error.localizedDescription)", type: .critical)
+                                let wrappedError = AppError.wrap(error, category: .network, action: "拉取 Java 列表失败")
+                                err(wrappedError.localizedDescription)
+                                hint(wrappedError.localizedDescription, type: .critical)
                             }
                         }
                     }

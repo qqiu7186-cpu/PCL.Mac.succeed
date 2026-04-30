@@ -1,64 +1,137 @@
-//
-//  InstanceConfigPage.swift
-//  PCL.Mac
-//
-//  Created by AnemoFlower on 2026/2/2.
-//
-
 import SwiftUI
 import Core
+import AppKit
 
 struct InstanceConfigPage: View {
-    @EnvironmentObject private var instanceVM: InstanceManager
     @StateObject private var viewModel: InstanceConfigViewModel
     @StateObject private var loadingVM: MyLoadingViewModel = .init(text: "加载中")
-    
+
     init(id: String) {
         self._viewModel = .init(wrappedValue: .init(id: id))
     }
-    
+
     var body: some View {
-        CardContainer {
-            if viewModel.loaded {
-                MyCard("", titled: false, padding: 10) {
-                    MyListItem(.init(image: viewModel.iconName, name: viewModel.id, description: viewModel.description))
-                }
-                if let instance = viewModel.instance {
-                    MyCard("", titled: false) {
-                        HStack {
-                            MyButton("打开实例目录") {
-                                NSWorkspace.shared.open(instance.runningDirectory)
+        InstanceSettingsScrollPage {
+            if viewModel.loaded, let instance = viewModel.instance {
+                InstanceSettingsInfoBanner(text: "这些设置只对该游戏实例生效，不影响其他实例。")
+
+                InstanceSettingsSectionCard("启动选项") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        InstanceSettingsFieldRow("版本隔离") {
+                            Button {
+                                versionIsolationBinding.wrappedValue.toggle()
+                            } label: {
+                                InstanceSettingsInputBox(text: viewModel.versionIsolationEnabled ? "开启" : "关闭", showsChevron: true)
                             }
-                            .frame(width: 120)
-                            MyButton("删除实例", type: .red) {
-                                MessageBoxManager.shared.showText(
-                                    title: "确认",
-                                    content: "你确定要删除这个实例（\(instance.name)）吗？\n这个实例的所有存档、模组 、资源包等将会永久消失！（真的很久！）",
-                                    level: .error,
-                                    .no(),
-                                    .yes(type: .red)
-                                ) { result in
-                                    if result == 1 {
-                                        do {
-                                            try instanceVM.deleteInstance(instance)
-                                            AppRouter.shared.removeLast()
-                                        } catch {
-                                            hint("删除实例失败：\(error.localizedDescription)", type: .critical)
-                                        }
-                                    }
-                                }
-                            }
-                            .frame(width: 120)
-                            Spacer()
+                            .buttonStyle(.plain)
                         }
-                        .frame(height: 35)
+                        InstanceSettingsFieldRow("游戏窗口标题") {
+                            advancedSingleLineField(text: windowTitleBinding, placeholder: viewModel.windowTitleFollowsGlobal ? "跟随全局设置" : instance.name)
+                                .disabled(viewModel.windowTitleFollowsGlobal)
+                                .opacity(viewModel.windowTitleFollowsGlobal ? 0.65 : 1)
+                        }
+                        InstanceSettingsCheckboxRow(title: "默认窗口标题", isOn: windowTitleFollowsBinding)
+                        InstanceSettingsFieldRow("自定义信息") {
+                            advancedSingleLineField(text: customInfoBinding, placeholder: "显示在概览页的实例备注")
+                        }
+                        InstanceSettingsFieldRow("游戏 Java") {
+                            Button(action: chooseJavaRuntime) {
+                                InstanceSettingsInputBox(text: viewModel.javaDescription, showsChevron: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        InstanceSettingsCheckboxRow(title: "自动选择合适的 Java", isOn: autoSelectJavaBinding)
+                        if !viewModel.javaSelectionHint.isEmpty {
+                            MyText(viewModel.javaSelectionHint, size: 11.5, color: .colorGray3)
+                                .padding(.leading, 112)
+                        }
                     }
-                    .cardIndex(1)
                 }
-                jvmCard
-                    .cardIndex(2)
+
+                InstanceSettingsSectionCard("游戏内存") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(MinecraftInstance.Config.MemoryMode.allCases, id: \.self) { mode in
+                            InstanceSettingsRadioRow(title: mode.title, selected: viewModel.memoryMode == mode) {
+                                viewModel.setMemoryMode(mode)
+                            }
+                        }
+
+                        HStack {
+                            Slider(value: heapSizeBinding, in: 512...memoryUpperBound, step: 256)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.top, 4)
+                        .disabled(viewModel.memoryMode != .custom)
+                        .opacity(viewModel.memoryMode == .custom ? 1 : 0.5)
+
+                        InstanceSettingsInputBox(text: viewModel.memoryMode == .custom ? "自定义：\(viewModel.jvmHeapSize) MB" : "自动调节（当前按默认值处理）")
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                MyText("已使用内存", size: 11, color: .colorGray3)
+                                Spacer()
+                                MyText("游戏分配", size: 11, color: .colorGray3)
+                            }
+                            HStack(spacing: 0) {
+                                Rectangle()
+                                    .fill(Color.color3)
+                                    .frame(width: 160, height: 3)
+                                Rectangle()
+                                    .fill(Color.color5)
+                                    .frame(width: 130, height: 3)
+                                Rectangle()
+                                    .fill(Color.colorGray6)
+                                    .frame(maxWidth: .infinity, minHeight: 3, maxHeight: 3)
+                            }
+                            HStack {
+                                MyText(usedMemoryText, size: 12)
+                                Spacer()
+                                MyText(allocatedMemoryText, size: 12)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+
+                InstanceSettingsSectionCard("服务器") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        InstanceSettingsFieldRow("自动进入服务器") {
+                            advancedSingleLineField(text: serverEntryBinding, placeholder: "服务器地址[:端口]，例如 mc.example.com:25565")
+                        }
+                        MyText("启动时会自动附加 --server / --port 参数。留空则不处理。", size: 11.5, color: .colorGray3)
+                            .padding(.leading, 112)
+                    }
+                }
+
+                InstanceSettingsSectionCard("高级启动选项", folded: false) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        InstanceSettingsFieldRow("JVM 参数头部") {
+                            advancedTextEditor(text: jvmArgsBinding, placeholder: "例如 -Dfile.encoding=UTF-8 -XX:+UseStringDeduplication", height: 80)
+                        }
+                        InstanceSettingsFieldRow("游戏参数尾部") {
+                            advancedSingleLineField(text: gameArgsBinding, placeholder: "例如 --fullscreen")
+                        }
+                        InstanceSettingsFieldRow("Classpath 头部附加") {
+                            advancedSingleLineField(text: classpathPrefixBinding, placeholder: "多个条目可用空格分隔")
+                        }
+                        InstanceSettingsFieldRow("启动前执行命令") {
+                            advancedSingleLineField(text: launchPrecommandBinding, placeholder: "使用 zsh -lc 执行，失败会中止启动")
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            InstanceSettingsCheckboxRow(title: "关闭资源完整性校验", isOn: disableValidationBinding)
+                            InstanceSettingsCheckboxRow(title: "跟随启动器网络代理设置", isOn: followProxySettingsBinding)
+                            InstanceSettingsCheckboxRow(title: "启用 log4j 调试日志", isOn: useLog4jConfigBinding)
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+
+                InstanceSettingsCenterActionButton(title: "全局设置", systemImage: "arrow.right") {
+                    AppRouter.shared.setRoot(.settings)
+                }
             } else {
-                MyLoading(viewModel: loadingVM)
+                MyLoading(viewModel: loadingVM, showCard: false)
             }
         }
         .task(id: viewModel.id) {
@@ -71,82 +144,267 @@ struct InstanceConfigPage: View {
             }
         }
     }
-    
-    @ViewBuilder
-    private var jvmCard: some View {
-        MyCard("JVM 设置", foldable: false) {
-            configLine(label: "Java 选择") {
-                Toggle("自动", isOn: $viewModel.autoSelectJava)
-                    .labelsHidden()
-                    .onChange(of: viewModel.autoSelectJava) { newValue in
-                        viewModel.setAutoSelectJava(newValue)
-                    }
-                MyText(viewModel.autoSelectJava ? "自动" : "手动")
+
+    private var totalMemoryGB: Double {
+        Double(ProcessInfo.processInfo.physicalMemory) / 1024 / 1024 / 1024
+    }
+
+    private var memoryUpperBound: Double {
+        max(4096, Double(Int(totalMemoryGB * 1024)))
+    }
+
+    private var usedMemoryText: String {
+        String(format: "%.1f GB / %.1f GB", effectiveAllocatedMemoryGB, totalMemoryGB)
+    }
+
+    private var allocatedMemoryText: String {
+        String(format: "%.1f GB", effectiveAllocatedMemoryGB)
+    }
+
+    private var effectiveAllocatedMemoryGB: Double {
+        let heapMB: Double
+        switch viewModel.memoryMode {
+        case .custom:
+            heapMB = Double(Int(viewModel.jvmHeapSize) ?? 4096)
+        case .global, .auto:
+            heapMB = 4096
+        }
+        return min(heapMB / 1024, totalMemoryGB)
+    }
+
+    private var heapSizeBinding: Binding<Double> {
+        Binding(
+            get: { Double(Int(viewModel.jvmHeapSize) ?? 4096) },
+            set: {
+                let heap = UInt64($0.rounded())
+                viewModel.jvmHeapSize = String(Int(heap))
+                viewModel.setHeapSize(heap)
             }
-            configLine(label: "使用的 Java") {
-                MyText(viewModel.javaDescription)
+        )
+    }
+
+    private func chooseJavaRuntime() {
+        let runtimes = viewModel.javaList()
+        MessageBoxManager.shared.showList(
+            title: "切换 Java",
+            items: runtimes.map { .init(name: $0.description, description: $0.executableURL.path) }
+        ) { index in
+            guard let index else { return }
+            do {
+                try viewModel.switchJava(to: runtimes[index])
+            } catch {
+                hint("切换 Java 失败：\(error.localizedDescription)", type: .critical)
             }
-            configLine(label: "当前生效") {
-                MyText(viewModel.javaSelectionHint)
-                    .lineLimit(2)
-            }
-            configLine(label: "内存分配") {
-                MyTextField(text: $viewModel.jvmHeapSize)
-                    .onChange(of: viewModel.jvmHeapSize) { newValue in
-                        if let jvmHeapSize: UInt64 = .init(newValue) { viewModel.setHeapSize(jvmHeapSize) }
-                    }
-                MyText("MB")
-            }
-            HStack(spacing: 30) {
-                MyButton("切换 Java") {
-                    let runtimes: [JavaRuntime] = viewModel.javaList()
-                    MessageBoxManager.shared.showList(
-                        title: "切换 Java",
-                        items: runtimes.map { .init(name: $0.description, description: $0.executableURL.path) }
-                    ) { index in
-                        guard let index else { return }
-                        let runtime: JavaRuntime = runtimes[index]
-                        do {
-                            try viewModel.switchJava(to: runtime)
-                        } catch let error as InstanceConfigViewModel.Error {
-                            switch error {
-                            case .invalidJavaVersion(let min, let max):
-                                MessageBoxManager.shared.showText(
-                                    title: "Java 版本不满足要求",
-                                    content: "这个实例需要 Java \(min)-\(max) 才能启动，但你选择的是 Java \(runtime.version)！",
-                                    level: .error
-                                )
-                            }
-                        } catch {
-                            err("切换 Java 失败：\(error.localizedDescription)")
-                            MessageBoxManager.shared.showText(
-                                title: "切换 Java 失败",
-                                content: "发生错误：\(error.localizedDescription)",
-                                level: .error
-                            )
-                        }
-                    }
-                }
-                .frame(minWidth: 150)
-                .fixedSize(horizontal: true, vertical: false)
-                Spacer()
-            }
-            .frame(height: 35)
-            .padding(.top, 12)
         }
     }
-    
-    @ViewBuilder
-    private func configLine(label: String,  @ViewBuilder body: () -> some View) -> some View {
-        HStack(spacing: 20) {
-            MyText(label)
-                .frame(width: 120, alignment: .leading)
-            HStack {
-                Spacer(minLength: 0)
-                body()
+
+    private func advancedSingleLineField(text: Binding<String>) -> some View {
+        advancedSingleLineField(text: text, placeholder: nil)
+    }
+
+    private func advancedSingleLineField(text: Binding<String>, placeholder: String?) -> some View {
+        ZStack(alignment: .leading) {
+            if let placeholder, text.wrappedValue.isEmpty {
+                MyText(placeholder, size: 12, color: .colorGray3)
+                    .padding(.horizontal, 10)
+                    .allowsHitTesting(false)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            TextField("", text: text)
+                .textFieldStyle(.plain)
+                .font(.custom("PCLEnglish", size: 12))
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 10)
         }
-        .padding(.horizontal, 6)
+        .frame(height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.white.opacity(0.72))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(Color.color6, lineWidth: 1)
+                )
+        )
+    }
+
+    private func advancedTextEditor(text: Binding<String>, placeholder: String, height: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            configuredTextEditor(text: text)
+
+            if text.wrappedValue.isEmpty {
+                MyText(placeholder, size: 12, color: .colorGray3)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(height: height)
+        .background(
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.white.opacity(0.72))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(Color.color6, lineWidth: 1)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func configuredTextEditor(text: Binding<String>) -> some View {
+        if #available(macOS 13.0, *) {
+            TextEditor(text: text)
+                .font(.custom("PCLEnglish", size: 12))
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .foregroundStyle(Color.black)
+                .background(Color.clear)
+        } else {
+            LegacyPlainTextEditor(text: text)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+        }
+    }
+}
+
+private struct LegacyPlainTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.font = NSFont(name: "PCLEnglish", size: 12) ?? .systemFont(ofSize: 12)
+        textView.textColor = .black
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.font = NSFont(name: "PCLEnglish", size: 12) ?? .systemFont(ofSize: 12)
+        textView.textColor = .black
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding private var text: String
+
+        init(text: Binding<String>) {
+            self._text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text = textView.string
+        }
+    }
+}
+
+private extension InstanceConfigPage {
+    var windowTitleFollowsBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.windowTitleFollowsGlobal },
+            set: { viewModel.setWindowTitleFollowsGlobal($0) }
+        )
+    }
+
+    var versionIsolationBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.versionIsolationEnabled },
+            set: { viewModel.setVersionIsolationEnabled($0) }
+        )
+    }
+
+    var windowTitleBinding: Binding<String> {
+        Binding(
+            get: { viewModel.customWindowTitle },
+            set: { viewModel.setCustomWindowTitle($0) }
+        )
+    }
+
+    var customInfoBinding: Binding<String> {
+        Binding(
+            get: { viewModel.customInfo },
+            set: { viewModel.setCustomInfo($0) }
+        )
+    }
+
+    var autoSelectJavaBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.autoSelectJava },
+            set: { viewModel.setAutoSelectJava($0) }
+        )
+    }
+
+    var serverEntryBinding: Binding<String> {
+        Binding(
+            get: { viewModel.serverEntry },
+            set: { viewModel.setServerEntry($0) }
+        )
+    }
+
+    var jvmArgsBinding: Binding<String> {
+        Binding(
+            get: { viewModel.jvmArgs },
+            set: { viewModel.setJVMArguments($0) }
+        )
+    }
+
+    var gameArgsBinding: Binding<String> {
+        Binding(
+            get: { viewModel.gameArgs },
+            set: { viewModel.setGameArguments($0) }
+        )
+    }
+
+    var classpathPrefixBinding: Binding<String> {
+        Binding(
+            get: { viewModel.classpathPrefix },
+            set: { viewModel.setClasspathPrefix($0) }
+        )
+    }
+
+    var launchPrecommandBinding: Binding<String> {
+        Binding(
+            get: { viewModel.launchPrecommand },
+            set: { viewModel.setLaunchPrecommand($0) }
+        )
+    }
+
+    var disableValidationBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.disableValidation },
+            set: { viewModel.setDisableValidation($0) }
+        )
+    }
+
+    var followProxySettingsBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.followProxySettings },
+            set: { viewModel.setFollowProxySettings($0) }
+        )
+    }
+
+    var useLog4jConfigBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.useLog4jConfig },
+            set: { viewModel.setUseLog4jConfig($0) }
+        )
     }
 }

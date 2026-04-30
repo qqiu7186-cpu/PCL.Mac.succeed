@@ -76,6 +76,7 @@ struct MinecraftDownloadPage: View {
 
 private struct VersionView: View {
     @EnvironmentObject private var viewModel: InstanceManager
+    @ObservedObject private var router: AppRouter = .shared
     private let version: VersionManifest.Version
     private let description: String
     
@@ -92,7 +93,7 @@ private struct VersionView: View {
                 hint("请先添加一个游戏目录！", type: .critical)
                 return
             }
-            AppRouter.shared.append(.minecraftInstallOptions(version: version))
+            AppRouter.shared.append(.minecraftInstallOptions(version: version, modifyContext: router.activeModifyContext))
         }
     }
 }

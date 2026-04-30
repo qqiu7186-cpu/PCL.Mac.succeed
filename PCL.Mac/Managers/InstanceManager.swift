@@ -66,6 +66,14 @@ class InstanceManager: ObservableObject {
         }
         return try currentRepository.instance(id: id)
     }
+
+    public func repository(matching path: String) -> MinecraftRepository? {
+        repositories.first { $0.url.standardizedFileURL.path == path }
+    }
+
+    public func repositoryTarget(for repository: MinecraftRepository) -> RepositoryRouteTarget {
+        RepositoryRouteTarget(repository: repository)
+    }
     
     /// 切换当前实例。
     /// - Parameters:

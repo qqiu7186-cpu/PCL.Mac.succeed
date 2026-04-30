@@ -9,6 +9,7 @@ import Foundation
 import Core
 import Combine
 
+@MainActor
 class JavaSettingsViewModel: ObservableObject {
     private static let dateFormatter: DateFormatter = {
         let formatter: DateFormatter = .init()
@@ -19,9 +20,30 @@ class JavaSettingsViewModel: ObservableObject {
     @Published public var javaList: [ListItem] = []
     
     private var cancellables: [AnyCancellable] = []
+    private let javaManager: JavaRuntimeManaging
+    private let javaDownloadPrompter: JavaDownloadPrompting
+    private let taskExecutor: TaskExecuting
+    private let taskNavigator: TaskRouteNavigating
+    var javaDownloadsProvider: (Architecture, Int, Bool) async throws -> [JavaDownloadPackage]
     
-    init() {
-        JavaManager.shared.$javaRuntimes
+    init(
+        javaManager: JavaRuntimeManaging = JavaManager.shared,
+        javaDownloadPrompter: JavaDownloadPrompting? = nil,
+        taskExecutor: TaskExecuting? = nil,
+        taskNavigator: TaskRouteNavigating? = nil
+    ) {
+        self.javaManager = javaManager
+        self.javaDownloadPrompter = javaDownloadPrompter ?? SharedJavaDownloadPrompter()
+        self.taskExecutor = taskExecutor ?? SharedTaskExecutor()
+        self.taskNavigator = taskNavigator ?? SharedTaskRouteNavigator()
+        self.javaDownloadsProvider = { architecture, preferredMajor, includeAllProviders in
+            try await JavaDownloadCatalogService.javaDownloads(
+                forArchitecture: architecture,
+                preferredMajor: preferredMajor,
+                includeAllProviders: includeAllProviders
+            )
+        }
+        javaManager.javaRuntimesPublisher
             .sink { [weak self] _ in
                 self?.reloadJavaList()
             }
@@ -34,7 +56,7 @@ class JavaSettingsViewModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let runtimes: [JavaRuntime]
             do {
-                runtimes = try JavaManager.shared.allJavaRuntimes()
+                runtimes = try self.javaManager.allJavaRuntimes()
             } catch {
                 err("加载 Java 列表失败：\(error.localizedDescription)")
                 DispatchQueue.main.async {
@@ -49,7 +71,7 @@ class JavaSettingsViewModel: ObservableObject {
             }
 
             let items: [ListItem] = sorted.map { runtime in
-                let broken: Bool = JavaManager.shared.isBrokenRuntime(runtime)
+                let broken: Bool = self.javaManager.isBrokenRuntime(runtime)
                 let suffix: String = broken ? "（不可用：此前预检失败）" : "（可用）"
                 return ListItem(
                     name: "\(runtime.description) \(suffix)",
@@ -68,11 +90,7 @@ class JavaSettingsViewModel: ObservableObject {
         preferredMajor: Int = 21,
         includeAllProviders: Bool = false
     ) async throws -> [JavaDownloadPackage] {
-        try await JavaDownloadCatalogService.javaDownloads(
-            forArchitecture: architecture,
-            preferredMajor: preferredMajor,
-            includeAllProviders: includeAllProviders
-        )
+        try await javaDownloadsProvider(architecture, preferredMajor, includeAllProviders)
     }
     
     public func listItem(forJavaDownload javaDownload: JavaDownloadPackage) -> ListItem {
@@ -86,6 +104,21 @@ class JavaSettingsViewModel: ObservableObject {
             name: "Java \(javaDownload.majorVersion)",
             description: description
         )
+    }
+
+    public func refreshJavaList() throws {
+        try javaManager.research()
+        reloadJavaList()
+    }
+
+    @MainActor
+    public func startInstallJavaFlow() async throws {
+        let downloads = try await javaDownloads()
+        guard let index = await javaDownloadPrompter.selectJavaDownload(from: downloads, itemBuilder: listItem(forJavaDownload:)) else {
+            return
+        }
+        taskExecutor.execute(JavaInstallTask.create(download: downloads[index], replaceExisting: true))
+        taskNavigator.showTasksPage()
     }
 
 }

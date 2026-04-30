@@ -96,8 +96,9 @@ class AccountViewModel: ObservableObject {
             code = try await service.start()
             log("获取设备码成功")
         } catch {
-            err("添加正版账号失败：获取设备码失败：\(error.localizedDescription)")
-            hint("添加正版账号失败：获取设备码失败：\(error.localizedDescription)", type: .critical)
+            let wrappedError = AppError.wrap(error, category: .authentication, action: "添加正版账号失败：获取设备码失败")
+            err(wrappedError.localizedDescription)
+            hint(wrappedError.localizedDescription, type: .critical)
             return
         }
         
@@ -183,11 +184,12 @@ class AccountViewModel: ObservableObject {
                     )
                 }
             } catch {
+                let wrappedError = AppError.wrap(error, category: .authentication, action: "添加正版账号失败")
                 MessageBoxManager.shared.showText(
                     title: "添加正版账号失败",
-                    content: "\(error.localizedDescription)\n若要寻求帮助，请将完整日志发送给他人，而不是发送此页面相关的图片。"
+                    content: "\(wrappedError.localizedDescription)\n若要寻求帮助，请将完整日志发送给他人，而不是发送此页面相关的图片。"
                 )
-                hint("登录失败：\(error.localizedDescription)", type: .critical)
+                hint(AppError.wrap(error, category: .authentication, action: "登录失败").localizedDescription, type: .critical)
             }
         }
         

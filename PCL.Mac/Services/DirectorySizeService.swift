@@ -1,21 +1,17 @@
 import Foundation
 
 enum DirectorySizeService {
-    private static let cache: NSCache<NSString, NSNumber> = {
-        let cache = NSCache<NSString, NSNumber>()
-        cache.countLimit = 256
-        return cache
-    }()
+    private static let cache = MemoryCache<String, Int64>(countLimit: 256)
     private static let actor = DirectorySizeLoader()
 
     static func cachedSize(for url: URL) -> Int64? {
-        cache.object(forKey: url.standardizedFileURL.path as NSString)?.int64Value
+        cache.object(forKey: url.standardizedFileURL.path)
     }
 
     static func loadSize(for url: URL) async -> Int64 {
-        let key = url.standardizedFileURL.path as NSString
+        let key = url.standardizedFileURL.path
         if let cached = cache.object(forKey: key) {
-            return cached.int64Value
+            return cached
         }
 
         if let task = await actor.task(for: url) {
@@ -24,7 +20,7 @@ enum DirectorySizeService {
 
         let task = Task<Int64, Never> {
             let size = calculateDirectorySize(at: url)
-            cache.setObject(NSNumber(value: size), forKey: key)
+            cache.setValue(size, for: key)
             await actor.removeTask(for: url)
             return size
         }

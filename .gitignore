@@ -5,3 +5,9 @@ _MACOSX
 # Xcode
 PCL.Mac.xcodeproj/xcuserdata
 PCL.Mac.xcodeproj/project.xcworkspace/xcuserdata
+
+# DMG packaging temp files
+dist/dmgroot/
+dist/*.temp.dmg
+dist/*-temp.dmg
+dist/.background/

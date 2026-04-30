@@ -49,6 +49,16 @@ public class MinecraftInstance: Equatable {
         config.jvmHeapSize = heapSize
         saveConfig()
     }
+
+    public func setMemoryMode(_ mode: Config.MemoryMode) {
+        config.memoryMode = mode
+        saveConfig()
+    }
+
+    public func setVersionIsolationEnabled(_ enabled: Bool) {
+        config.versionIsolationEnabled = enabled
+        saveConfig()
+    }
     
     /// 设置实例使用的 Java 并保存。
     public func setJava(url: URL?) {
@@ -59,6 +69,51 @@ public class MinecraftInstance: Equatable {
 
     public func setAutoSelectJava(_ enabled: Bool) {
         config.autoSelectJava = enabled
+        saveConfig()
+    }
+
+    public func setWindowTitle(_ title: String?) {
+        config.windowTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        saveConfig()
+    }
+
+    public func setAutoJoinServer(_ entry: String?) {
+        config.autoJoinServer = entry?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        saveConfig()
+    }
+
+    public func setJVMArguments(_ arguments: String) {
+        config.jvmArguments = arguments
+        saveConfig()
+    }
+
+    public func setGameArguments(_ arguments: String) {
+        config.gameArguments = arguments
+        saveConfig()
+    }
+
+    public func setClasspathPrefix(_ prefix: String) {
+        config.classpathPrefix = prefix
+        saveConfig()
+    }
+
+    public func setPreLaunchCommand(_ command: String) {
+        config.preLaunchCommand = command
+        saveConfig()
+    }
+
+    public func setFollowProxySettings(_ enabled: Bool) {
+        config.followProxySettings = enabled
+        saveConfig()
+    }
+
+    public func setDisableResourceValidation(_ enabled: Bool) {
+        config.disableResourceValidation = enabled
+        saveConfig()
+    }
+
+    public func setEnableLog4jDebug(_ enabled: Bool) {
+        config.enableLog4jDebug = enabled
         saveConfig()
     }
     
@@ -221,32 +276,105 @@ public class MinecraftInstance: Equatable {
     }
     
     public class Config: Codable {
+        public enum MemoryMode: String, Codable, CaseIterable {
+            case global
+            case auto
+            case custom
+
+            public var title: String {
+                switch self {
+                case .global: "跟随全局设置"
+                case .auto: "自动配置"
+                case .custom: "自定义"
+                }
+            }
+        }
+
         public var jvmHeapSize: UInt64
+        public var memoryMode: MemoryMode
+        public var versionIsolationEnabled: Bool
         public var autoSelectJava: Bool
         public var javaURL: URL?
+        public var windowTitle: String?
+        public var autoJoinServer: String?
+        public var jvmArguments: String
+        public var gameArguments: String
+        public var classpathPrefix: String
+        public var preLaunchCommand: String
+        public var followProxySettings: Bool
+        public var disableResourceValidation: Bool
+        public var enableLog4jDebug: Bool
+
+        public var requestedMemoryMB: UInt64 {
+            switch memoryMode {
+            case .custom:
+                max(1024, jvmHeapSize)
+            case .global, .auto:
+                4096
+            }
+        }
         
         public init() {
             self.jvmHeapSize = 4096
+            self.memoryMode = .custom
+            self.versionIsolationEnabled = true
             self.autoSelectJava = true
             self.javaURL = nil
+            self.windowTitle = nil
+            self.autoJoinServer = nil
+            self.jvmArguments = ""
+            self.gameArguments = ""
+            self.classpathPrefix = ""
+            self.preLaunchCommand = ""
+            self.followProxySettings = true
+            self.disableResourceValidation = false
+            self.enableLog4jDebug = false
         }
         
         private enum CodingKeys: String, CodingKey {
-            case jvmHeapSize, autoSelectJava, javaURL
+            case jvmHeapSize, memoryMode, versionIsolationEnabled, autoSelectJava, javaURL, windowTitle, autoJoinServer, jvmArguments, gameArguments, classpathPrefix, preLaunchCommand, followProxySettings, disableResourceValidation, enableLog4jDebug
         }
         
         public required init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.jvmHeapSize = try container.decode(UInt64.self, forKey: .jvmHeapSize)
+            self.jvmHeapSize = try container.decodeIfPresent(UInt64.self, forKey: .jvmHeapSize) ?? 4096
+            self.memoryMode = try container.decodeIfPresent(MemoryMode.self, forKey: .memoryMode) ?? .custom
+            self.versionIsolationEnabled = try container.decodeIfPresent(Bool.self, forKey: .versionIsolationEnabled) ?? true
             self.autoSelectJava = try container.decodeIfPresent(Bool.self, forKey: .autoSelectJava) ?? true
             self.javaURL = try container.decodeIfPresent(URL.self, forKey: .javaURL)
+            self.windowTitle = try container.decodeIfPresent(String.self, forKey: .windowTitle)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            self.autoJoinServer = try container.decodeIfPresent(String.self, forKey: .autoJoinServer)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            self.jvmArguments = try container.decodeIfPresent(String.self, forKey: .jvmArguments) ?? ""
+            self.gameArguments = try container.decodeIfPresent(String.self, forKey: .gameArguments) ?? ""
+            self.classpathPrefix = try container.decodeIfPresent(String.self, forKey: .classpathPrefix) ?? ""
+            self.preLaunchCommand = try container.decodeIfPresent(String.self, forKey: .preLaunchCommand) ?? ""
+            self.followProxySettings = try container.decodeIfPresent(Bool.self, forKey: .followProxySettings) ?? true
+            self.disableResourceValidation = try container.decodeIfPresent(Bool.self, forKey: .disableResourceValidation) ?? false
+            self.enableLog4jDebug = try container.decodeIfPresent(Bool.self, forKey: .enableLog4jDebug) ?? false
         }
         
         public func encode(to encoder: any Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(jvmHeapSize, forKey: .jvmHeapSize)
+            try container.encode(memoryMode, forKey: .memoryMode)
+            try container.encode(versionIsolationEnabled, forKey: .versionIsolationEnabled)
             try container.encode(autoSelectJava, forKey: .autoSelectJava)
             try container.encodeIfPresent(javaURL, forKey: .javaURL)
+            try container.encodeIfPresent(windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .windowTitle)
+            try container.encodeIfPresent(autoJoinServer?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, forKey: .autoJoinServer)
+            try container.encode(jvmArguments, forKey: .jvmArguments)
+            try container.encode(gameArguments, forKey: .gameArguments)
+            try container.encode(classpathPrefix, forKey: .classpathPrefix)
+            try container.encode(preLaunchCommand, forKey: .preLaunchCommand)
+            try container.encode(followProxySettings, forKey: .followProxySettings)
+            try container.encode(disableResourceValidation, forKey: .disableResourceValidation)
+            try container.encode(enableLog4jDebug, forKey: .enableLog4jDebug)
         }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

@@ -22,16 +22,36 @@ public class LogManager {
     
     public func enableLogging(logsURL: URL = URLConstants.logsDirectoryURL) {
         let logFileURL: URL = logsURL.appending(path: "Log1.log")
-        if !FileManager.default.fileExists(atPath: logsURL.path) {
-            try? FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
+        do {
+            if !FileManager.default.fileExists(atPath: logsURL.path) {
+                try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
+            } else {
+                Self.updateLogs(logsURL: logsURL)
+            }
+            fileHandle?.closeFile()
             FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
-        } else {
-            Self.updateLogs(logsURL: logsURL)
-            FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: logFileURL)
+            try handle.truncate(atOffset: 0)
+            self.fileHandle = handle
+        } catch {
+            self.fileHandle = nil
+            print("无法初始化日志文件：\(error.localizedDescription)")
         }
-        let handle: FileHandle = try! FileHandle(forWritingTo: logFileURL)
-        try? handle.truncate(atOffset: 0)
-        self.fileHandle = handle
+    }
+
+    public func exportLogs(to destinationDirectory: URL, logsURL: URL = URLConstants.logsDirectoryURL) throws -> URL {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let exportDirectory = destinationDirectory.appending(path: "PCL.Mac-Diagnostics-\(formatter.string(from: .now))")
+        let logsExportDirectory = exportDirectory.appending(path: "Logs")
+
+        try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: logsURL.path) {
+            try FileManager.default.copyItem(at: logsURL, to: logsExportDirectory)
+        } else {
+            try FileManager.default.createDirectory(at: logsExportDirectory, withIntermediateDirectories: true)
+        }
+        return exportDirectory
     }
     
     public func log(message: Any, level: String, file: String = #file, line: Int = #line) {

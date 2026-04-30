@@ -17,29 +17,50 @@ class ResourceInstallViewModel: ObservableObject {
     @Published public var selectedVersionGroup: VersionGroup?
     @Published public var loaded: Bool = false
     
-    public let project: ProjectListItemModel
+    @Published public private(set) var project: ProjectListItemModel?
+    public let target: ProjectInstallTarget
     public let loadingVM: MyLoadingViewModel = .init(text: "加载中")
+    private let dependencies: AppDependencies
+    private let taskDispatcher: InstallTaskDispatching
+    private let routeNavigator: InstallRouteNavigating
+    private let prompter: InstallPrompting
     
-    public init(project: ProjectListItemModel) {
-        self.project = project
+    public var displayTitle: String {
+        project?.title ?? target.title
+    }
+
+    @MainActor
+    public init(
+        target: ProjectInstallTarget,
+        dependencies: AppDependencies = .live,
+        taskDispatcher: InstallTaskDispatching? = nil,
+        routeNavigator: InstallRouteNavigating? = nil,
+        prompter: InstallPrompting? = nil
+    ) {
+        self.target = target
+        self.dependencies = dependencies
+        self.taskDispatcher = taskDispatcher ?? SharedInstallTaskDispatcher()
+        self.routeNavigator = routeNavigator ?? SharedInstallRouteNavigator()
+        self.prompter = prompter ?? SharedInstallPrompter()
     }
     
     public func load(selectedInstance: MinecraftInstance? = nil) async throws {
+        let project = try await loadProjectIfNeeded()
         let selectedInstanceKey: VersionMapKey? = selectedInstance.map { .init(loader: $0.modLoader, version: $0.version) }
         var selectedVersionGroup: VersionGroup? = selectedInstanceKey.map { ($0, []) }
         
-        let versions: [ModrinthVersion] = try await ModrinthAPIClient.shared.versions(ofProject: project.id, revalidate: true)
+        let versions: [ModrinthVersion] = try await dependencies.modrinthService.versions(ofProject: project.id, revalidate: true)
         
         var versionMap: [VersionMapKey: [ProjectVersionModel]] = [:]
         for version in versions {
-            var dependencies: [ProjectVersionModel.Dependency] = []
+            var requiredDependencies: [ProjectVersionModel.Dependency] = []
             for dependency in version.dependencies {
                 guard let projectId: String = dependency.projectId,
                       dependency.isRequired else {
                     continue
                 }
-                let project: ModrinthProject = try await ModrinthAPIClient.shared.project(projectId)
-                dependencies.append(.init(versionId: dependency.id, projectId: projectId, project: .init(project)))
+                let project: ModrinthProject = try await dependencies.modrinthService.project(projectId, revalidate: false)
+                requiredDependencies.append(.init(versionId: dependency.id, projectId: projectId, project: .init(project)))
             }
             
             var keys: [VersionMapKey] = []
@@ -63,7 +84,7 @@ class ResourceInstallViewModel: ObservableObject {
                     version: version.versionNumber,
                     downloads: ProjectListItemModel.formatDownloads(version.downloads),
                     datePublished: ProjectListItemModel.formatLastUpdate(version.datePublished),
-                    requiredDependencies: dependencies,
+                    requiredDependencies: requiredDependencies,
                     type: version.type,
                     primaryFile: version.files.filter(\.primary).first,
                     gameVersion: key.version.id,
@@ -93,7 +114,7 @@ class ResourceInstallViewModel: ObservableObject {
     ///   - version: 选择的版本。
     /// - Throws: 如果不能安装，抛出 `InstanceCheckError`。
     public func checkInstance(_ instance: MinecraftInstance, withVersion version: ProjectVersionModel) throws {
-        if project.type == .mod, let requiredLoader: ModLoader = version.loader {
+        if target.type == .mod, let requiredLoader: ModLoader = version.loader {
             guard let loader: ModLoader = instance.modLoader else {
                 throw InstanceCheckError.modLoaderMissing(name: requiredLoader)
             }
@@ -110,10 +131,12 @@ class ResourceInstallViewModel: ObservableObject {
         guard let primaryFile = version.primaryFile else {
             throw SimpleError("这个版本中没有主要文件！")
         }
+
+        let project = try await loadProjectIfNeeded()
         
         let saveDirectoryName: String = switch project.type {
         case .mod: "mods"
-        case .modpack: fatalError()
+        case .modpack: throw SimpleError("整合包需要使用专门的安装流程，不能按普通资源直接安装。")
         case .resourcepack: "resourcepacks"
         case .shader: "shaderpacks"
         }
@@ -131,6 +154,100 @@ class ResourceInstallViewModel: ObservableObject {
                 )
             }
         )
+    }
+
+    @MainActor
+    public func openDependencyProject(_ project: ProjectListItemModel) {
+        routeNavigator.openProjectInstall(.init(project: project))
+    }
+
+    @MainActor
+    public func confirmVersionInstall(for version: ProjectVersionModel) async throws -> String? {
+        guard let instance = InstanceManager.shared.currentInstance else {
+            return "请先安装并选择一个实例！"
+        }
+
+        do {
+            try checkInstance(instance, withVersion: version)
+        } catch let error as InstanceCheckError {
+            switch error {
+            case .versionUnsupported:
+                let shouldContinue = await prompter.showConfirm(
+                    title: "当前实例不符合要求",
+                    content: "\(error.localizedDescription)\n你可以选择继续安装，但游戏可能会发生崩溃或无法正常游玩。\n是否继续安装？",
+                    level: .error,
+                    cancelLabel: "取消",
+                    confirmLabel: "继续",
+                    confirmType: .red
+                )
+                if !shouldContinue { return nil }
+            default:
+                await prompter.showError(title: "当前实例不符合要求", content: error.localizedDescription)
+                return nil
+            }
+        }
+
+        guard await prompter.showConfirm(title: "确认", content: "确定要安装 \(displayTitle) \(version.version) 吗？", level: .info, cancelLabel: "取消", confirmLabel: "确认", confirmType: .highlight) else {
+            return nil
+        }
+
+        let task = try await createInstallTask(forVersion: version, to: instance)
+        taskDispatcher.executeResourceTask(task)
+        routeNavigator.showTasksPage()
+        return nil
+    }
+
+    @MainActor
+    public func confirmModpackInstall(for version: ProjectVersionModel) async throws -> String? {
+        guard let repository = InstanceManager.shared.currentRepository else {
+            return "请先选择一个游戏目录！"
+        }
+
+        guard await prompter.showConfirm(title: "确认", content: "确定要安装整合包 \(displayTitle) \(version.version) 吗？", level: .info, cancelLabel: "取消", confirmLabel: "确认", confirmType: .highlight) else {
+            return nil
+        }
+
+        hint("开始下载整合包……")
+        let (downloadTask, destination) = try createModpackDownloadTask(version)
+        let downloadExecutorTask = taskDispatcher.executeDownloadTask(downloadTask)
+        try await downloadExecutorTask.value
+
+        let index = try loadIndex(destination)
+        guard var name = await prompter.showInput(title: "安装整合包 - 输入实例名", initialContent: index.name) else {
+            return nil
+        }
+
+        do {
+            name = try repository.checkInstanceName(name)
+        } catch {
+            return AppError.wrap(error, category: .configuration, action: "该名称不可用").localizedDescription
+        }
+
+        let installTask = try ModrinthModpackInstallTask.create(
+            url: destination,
+            index: index,
+            repository: repository,
+            name: name
+        ) { instance in
+            InstanceManager.shared.switchInstance(to: instance, repository)
+            hint("整合包安装完成：\(instance.name)", type: .finish)
+        }
+
+        taskDispatcher.executeModpackInstallTask(installTask)
+        routeNavigator.showTasksPage()
+        return nil
+    }
+
+    private func loadProjectIfNeeded() async throws -> ProjectListItemModel {
+        if let project {
+            return project
+        }
+
+        let loadedProject = ProjectListItemModel(try await dependencies.modrinthService.project(target.id, revalidate: true))
+        await MainActor.run {
+            self.project = loadedProject
+        }
+        return loadedProject
     }
     
     public struct VersionMapKey: Hashable, Equatable, Comparable, Identifiable, CustomStringConvertible {
@@ -191,7 +308,7 @@ extension ResourceInstallViewModel {
         
         let destination: URL = URLConstants.tempURL.appending(path: "modpack-download-\(version.id)")
         let task: MyTask<EmptyModel> = .init(
-            name: "下载整合包 - \(project.title) \(version.version)",
+            name: "下载整合包 - \(displayTitle) \(version.version)",
             .init(0, "下载文件") { task, _ in
                 try await SingleFileDownloader.download(
                     url: primaryFile.url,

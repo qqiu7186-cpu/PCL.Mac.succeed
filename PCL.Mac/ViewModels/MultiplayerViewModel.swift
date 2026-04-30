@@ -19,8 +19,17 @@ class MultiplayerViewModel: ObservableObject {
     
     private var server: ScaffoldingServer?
     private var client: ScaffoldingClient?
-    private var serverCheckTask: Task<Void, Swift.Error>?
+    private var hostStartupTask: Task<Void, Never>?
+    private var joinTask: Task<Void, Never>?
+    private var serverCheckTask: Task<Void, Never>?
     private let vendor: String = "PCL.Mac \(Metadata.appVersion), SwiftScaffolding 0.2.0, EasyTier v2.5.0"
+    private static let adminPublicKeyBase64 = "jIT9qh1/37/budNx6tyP7bYZe59I+MGFVG1BKybg/KU="
+
+    deinit {
+        hostStartupTask?.cancel()
+        joinTask?.cancel()
+        serverCheckTask?.cancel()
+    }
     
     /// 创建并启动一个 Scaffolding 联机中心。
     /// - Parameter serverPort: Minecraft 服务器的端口。
@@ -45,7 +54,9 @@ class MultiplayerViewModel: ObservableObject {
                 hostInfo: playerInfo()
             )
             registerCustomProtocols(to: server)
-            Task.detached {
+            hostStartupTask?.cancel()
+            hostStartupTask = Task(priority: .userInitiated) { [weak self] in
+                guard let self else { return }
                 do {
                     _ = try await server.startListener()
                     try server.createRoom(terminationHandler: { [weak self] process in
@@ -57,18 +68,26 @@ class MultiplayerViewModel: ObservableObject {
                     await MainActor.run {
                         self.server = server
                         self.state = .hostReady
-                        self.room = server.room
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(server.roomCode, forType: .string)
-                    }
-                    self.serverCheckTask = Task.detached {
-                        while !Task.isCancelled {
-                            try await Task.sleep(seconds: 5)
-                            guard await Scaffolding.checkMinecraftServer(on: serverPort, timeout: 5) else {
-                                log("局域网世界验活失败")
-                                await self.stopHost()
-                                MessageBoxManager.shared.showText(title: "房间已关闭", content: "局域网世界已关闭，房间已自动关闭。")
-                                break
+                            self.room = server.room
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(server.roomCode, forType: .string)
+                        }
+                    await MainActor.run {
+                        self.serverCheckTask?.cancel()
+                        self.serverCheckTask = Task(priority: .utility) { [weak self] in
+                            guard let self else { return }
+                            while !Task.isCancelled {
+                                do {
+                                    try await Task.sleep(seconds: 5)
+                                } catch {
+                                    return
+                                }
+                                guard await Scaffolding.checkMinecraftServer(on: serverPort, timeout: 5) else {
+                                    log("局域网世界验活失败")
+                                    await self.stopHost()
+                                    MessageBoxManager.shared.showText(title: "房间已关闭", content: "局域网世界已关闭，房间已自动关闭。")
+                                    return
+                                }
                             }
                         }
                     }
@@ -91,6 +110,8 @@ class MultiplayerViewModel: ObservableObject {
     /// 关闭联机中心。
     @MainActor
     public func stopHost() {
+        hostStartupTask?.cancel()
+        hostStartupTask = nil
         serverCheckTask?.cancel()
         serverCheckTask = nil
         room = nil
@@ -111,7 +132,9 @@ class MultiplayerViewModel: ObservableObject {
             playerInfo: playerInfo()
         )
         state = .joiningRoom
-        Task.detached {
+        joinTask?.cancel()
+        joinTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
             do {
                 try await client.connect(to: roomCode, terminationHandler: { [weak self] process in
                     guard let self else { return }
@@ -144,6 +167,8 @@ class MultiplayerViewModel: ObservableObject {
     /// 退出房间。
     @MainActor
     public func leave() {
+        joinTask?.cancel()
+        joinTask = nil
         room = nil
         client?.stop()
         client = nil
@@ -216,13 +241,14 @@ class MultiplayerViewModel: ObservableObject {
             guard buf.data.count > 1 + 64 else {
                 throw SimpleError("请求体长度不足")
             }
-            let publicKey = try! Curve25519.Signing.PublicKey(
-                rawRepresentation: Data(base64Encoded: "jIT9qh1/37/budNx6tyP7bYZe59I+MGFVG1BKybg/KU=")!
-            )
+            let publicKey = try Self.trustedAdminPublicKey()
             let message: String = try buf.readString(buf.readUInt8())
             let signature: Data = try buf.readData(length: 64)
+            guard let messageData = message.data(using: .utf8) else {
+                throw SimpleError("消息编码失败")
+            }
             
-            guard publicKey.isValidSignature(signature, for: message.data(using: .utf8)!) else {
+            guard publicKey.isValidSignature(signature, for: messageData) else {
                 throw SimpleError("签名校验失败")
             }
             
@@ -251,6 +277,17 @@ class MultiplayerViewModel: ObservableObject {
             name: AccountViewModel().currentAccount?.profile.name ?? "Anonymous",
             vendor: vendor
         )
+    }
+
+    private static func trustedAdminPublicKey() throws -> Curve25519.Signing.PublicKey {
+        guard let rawRepresentation = Data(base64Encoded: adminPublicKeyBase64) else {
+            throw SimpleError("管理员公钥配置无效")
+        }
+        do {
+            return try Curve25519.Signing.PublicKey(rawRepresentation: rawRepresentation)
+        } catch {
+            throw SimpleError("管理员公钥初始化失败：\(error.localizedDescription)")
+        }
     }
     
     public enum State: Equatable {

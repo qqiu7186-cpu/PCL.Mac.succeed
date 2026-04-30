@@ -13,6 +13,10 @@ on:
 jobs:
   build:
     runs-on: macos-26
+    env:
+      XCODE_PROJECT: PCL.Mac.xcodeproj
+      XCODE_SCHEME: PCL.Mac
+      XCODE_TEST_PLAN: PCL.Mac
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,11 +29,40 @@ jobs:
           if [ -z "$PR_NUMBER" ]; then PR_NUMBER=0; fi
           BUILD_NUMBER=$(printf "%d%05d" "$PR_NUMBER" "$(git rev-list --count HEAD)")
 
-          xcodebuild \
-          -project PCL.Mac.xcodeproj -scheme PCL.Mac -configuration Debug \
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Debug \
             CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
-            -archivePath build archive
+            -archivePath build
 
       - name: Check build artifacts
         run: |
           file build.xcarchive/Products/Applications/PCL.Mac.app
+
+      - name: Run smoke tests
+        run: |
+          set +e
+
+          xcodebuild test \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -testPlan "$XCODE_TEST_PLAN" \
+            -destination 'platform=macOS' \
+            -only-testing:PCL.Mac.Tests/ServiceArchitectureTests \
+            -resultBundlePath ./smoke-tests.xcresult
+
+          exit_code=$?
+          echo "TEST_EXIT_CODE=$exit_code" >> "$GITHUB_ENV"
+
+          set -e
+        continue-on-error: true
+
+      - name: Upload smoke test result
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-smoke-tests.xcresult
+          path: smoke-tests.xcresult
+
+      - name: Fail job if smoke tests failed
+        run: |
+          exit_code="${TEST_EXIT_CODE:-0}"
+          exit "${exit_code}"

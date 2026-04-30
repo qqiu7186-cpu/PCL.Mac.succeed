@@ -69,8 +69,7 @@ class MultiplayerViewModel: ObservableObject {
                         self.server = server
                         self.state = .hostReady
                             self.room = server.room
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(server.roomCode, forType: .string)
+                            NSPasteboard.general.writeObjects([server.roomCode as NSString])
                         }
                     await MainActor.run {
                         self.serverCheckTask?.cancel()
@@ -146,8 +145,7 @@ class MultiplayerViewModel: ObservableObject {
                     self.client = client
                     self.state = .memberReady
                     self.room = client.room
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString("127.0.0.1:\(client.room.serverPort)", forType: .string)
+                    NSPasteboard.general.writeObjects(["127.0.0.1:\(client.room.serverPort)" as NSString])
                 }
                 log("加入房间成功，本地端口：\(client.room.serverPort)")
                 log("正在启动心跳任务")

@@ -367,14 +367,12 @@ struct ResourceInstallPage: View {
     }
 
     private func copyProjectID() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(viewModel.target.id, forType: .string)
+        NSPasteboard.general.writeObjects([viewModel.target.id as NSString])
         hint("已复制项目 ID。", type: .finish)
     }
 
     private func copyProjectName() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(viewModel.target.title, forType: .string)
+        NSPasteboard.general.writeObjects([viewModel.target.title as NSString])
         hint("已复制项目名称。", type: .finish)
     }
 }

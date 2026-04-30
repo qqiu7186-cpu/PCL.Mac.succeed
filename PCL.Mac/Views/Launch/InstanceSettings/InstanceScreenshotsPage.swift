@@ -126,9 +126,7 @@ private struct ScreenshotCard: View {
                         onDelete()
                     }
                     smallAction("doc.on.doc", "复制") {
-                        let board = NSPasteboard.general
-                        board.clearContents()
-                        board.writeObjects([item.url as NSURL])
+                        NSPasteboard.general.writeObjects([item.url as NSURL])
                     }
                 }
                 .padding(.vertical, 8)

@@ -19,7 +19,7 @@ struct NoInstanceRepositoryPage: View {
 
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
-                    Image("IconSearch")
+                    Image(.iconSearch)
                         .resizable()
                         .scaledToFit()
                         .frame(width: 15, height: 15)

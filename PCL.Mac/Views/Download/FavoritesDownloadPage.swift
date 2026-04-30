@@ -41,7 +41,7 @@ struct FavoritesDownloadPage: View {
     private var searchCard: some View {
         MyCard("", foldable: false, titled: false) {
             HStack(spacing: 10) {
-                Image("IconSearch")
+                Image(.iconSearch)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 16, height: 16)

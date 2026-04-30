@@ -160,8 +160,7 @@ struct MultiplayerPage: View {
                         VStack(spacing: 0) {
                             if viewModel.state == .hostReady, let roomCode = viewModel.roomCode() {
                                 ActionView(.iconCopy, "复制房间码") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(roomCode, forType: .string)
+                                    NSPasteboard.general.writeObjects([roomCode as NSString])
                                     hint("复制成功！", type: .finish)
                                 }
                                 ActionView(.iconPower, "关闭房间", color: .red) {
@@ -180,8 +179,7 @@ struct MultiplayerPage: View {
                                 }
                             } else {
                                 ActionView(.iconCopy, "复制地址") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString("127.0.0.1:\(room.serverPort)", forType: .string)
+                                    NSPasteboard.general.writeObjects(["127.0.0.1:\(room.serverPort)" as NSString])
                                     hint("复制成功！", type: .finish)
                                 }
                                 ActionView(.iconPower, "退出房间", color: .red) {

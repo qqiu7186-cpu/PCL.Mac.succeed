@@ -45,10 +45,10 @@ struct InstanceListSidebar: Sidebar {
                         .padding(.bottom, 6)
 
                     VStack(spacing: 2) {
-                        ImportButton("IconAdd", "添加已有文件夹") {
+                        ImportButton(.iconAdd, "添加已有文件夹") {
                             try instanceViewModel.requestAddRepository()
                         }
-                        ImportButton("IconImportModpack", "导入整合包", perform: onImportModpackClicked)
+                        ImportButton(.iconImportModpack, "导入整合包", perform: onImportModpackClicked)
                     }
                 }
                 .padding(.bottom, 12)
@@ -206,11 +206,11 @@ private struct RepositoryRow: View {
 }
 
 private struct ImportButton: View {
-    private let image: String
+    private let image: ImageResource
     private let label: String
     private let perform: () throws -> Void
     
-    public init(_ image: String, _ label: String, perform: @escaping () throws -> Void) {
+    public init(_ image: ImageResource, _ label: String, perform: @escaping () throws -> Void) {
         self.image = image
         self.label = label
         self.perform = perform

@@ -98,9 +98,8 @@ private struct InstallerDownloadsPage: View {
                 hint("下载完成：\(target.title)", type: .finish)
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
             } catch {
-                NSPasteboard.general.clearContents()
                 if let url = target.primaryURL {
-                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    NSPasteboard.general.writeObjects([url.absoluteString as NSString])
                 }
                 hint("下载失败：\(error.localizedDescription)", type: .critical)
                 hint("已复制链接到剪贴板，可手动下载", type: .info)

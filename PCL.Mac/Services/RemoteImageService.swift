@@ -71,7 +71,10 @@ actor RemoteImageService {
     }
 
     private func isAllowedHost(_ host: String) -> Bool {
-        host == "modrinth.com" || host.hasSuffix(".modrinth.com")
+        host == "modrinth.com" ||
+        host.hasSuffix(".modrinth.com") ||
+        host == "cylorine.studio" ||
+        host.hasSuffix(".cylorine.studio")
     }
 
     private func cacheKey(for url: URL, targetSize: CGSize?) -> String {

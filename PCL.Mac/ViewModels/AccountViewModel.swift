@@ -197,8 +197,7 @@ class AccountViewModel: ObservableObject {
             title: "添加正版账号",
             content: "请打开 \(code.verificationURL)，然后输入 \(code.code)，随后根据提示完成后续授权步骤。\n点击下方按钮可以一键复制并跳转！",
             .init(id: 1, label: "复制并跳转", type: .highlight) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(code.code, forType: .string)
+                NSPasteboard.general.writeObjects([code.code as NSString])
                 NSWorkspace.shared.open(code.verificationURL)
             },
             .no()

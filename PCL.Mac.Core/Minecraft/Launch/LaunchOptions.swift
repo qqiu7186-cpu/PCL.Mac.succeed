@@ -67,6 +67,11 @@ public struct LaunchOptions {
     public var enableLog4jDebug: Bool = false
     public var autoJoinServer: AutoJoinServer?
     
+    // Authlib Injector
+    public var authlibInjectorPath: String?
+    public var authServerURL: URL?
+    public var prefetchedMeta: String?
+    
     public func validate() throws {
         if profile == nil || accessToken == nil { throw LaunchError.missingAccount }
         if javaRuntime == nil { throw LaunchError.missingJava }

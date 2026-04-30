@@ -64,7 +64,7 @@ private struct InstallerDownloadsPage: View {
                             .padding(.vertical, 8)
                     } else {
                         MyList(items: filteredEntries.map { item in
-                            ListItem(image: "IconBlock", name: item.title, description: item.subtitle)
+                            ListItem(image: .iconBlock, name: item.title, description: item.subtitle)
                         }) { index in
                             guard let index else { return }
                             let target = filteredEntries[index]

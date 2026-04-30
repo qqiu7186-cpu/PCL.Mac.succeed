@@ -15,8 +15,8 @@ struct InstanceOverviewPage: View {
 
                 InstanceSettingsSectionCard("实例信息") {
                     HStack(spacing: 28) {
-                        infoItem(icon: "IconBlock", title: "启动次数", value: "暂无记录")
-                        infoItem(icon: instance.modLoader?.icon ?? "GrassBlock", title: instance.modLoader?.description ?? "Minecraft", value: instance.version.description)
+                        infoItem(icon: .iconBlock, title: "启动次数", value: "暂无记录")
+                        infoItem(icon: instance.modLoader?.icon ?? .iconGrassBlock, title: instance.modLoader?.description ?? "Minecraft", value: instance.version.description)
                         Spacer(minLength: 0)
                     }
                 }
@@ -90,7 +90,7 @@ struct InstanceOverviewPage: View {
         }
     }
 
-    private func infoItem(icon: String, title: String, value: String) -> some View {
+    private func infoItem(icon: ImageResource, title: String, value: String) -> some View {
         HStack(spacing: 10) {
             Image(icon)
                 .resizable()

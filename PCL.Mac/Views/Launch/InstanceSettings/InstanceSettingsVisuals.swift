@@ -49,7 +49,7 @@ struct InstanceSettingsHeaderCard: View {
     var body: some View {
         MyCard("", foldable: false, titled: false, padding: 14) {
             HStack(spacing: 10) {
-                Image(instance.modLoader?.icon ?? "GrassBlock")
+                Image(instance.modLoader?.icon ?? .iconGrassBlock)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 26, height: 26)

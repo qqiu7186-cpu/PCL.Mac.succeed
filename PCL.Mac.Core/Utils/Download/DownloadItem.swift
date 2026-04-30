@@ -12,6 +12,7 @@ public struct DownloadItem: Hashable {
     public let urls: [URL]
     public let mirrorKey: String?
     public let destination: URL
+    public let checksums: [String: String]?
     public let sha1: String?
     public let executable: Bool
     
@@ -19,7 +20,21 @@ public struct DownloadItem: Hashable {
         self.init(urls: [url], destination: destination, sha1: sha1, executable: executable, mirrorKey: mirrorKey)
     }
 
+    public init(url: URL, destination: URL, checksums: [String: String]?, executable: Bool = false, mirrorKey: String? = nil) {
+        self.init(urls: [url], destination: destination, checksums: checksums, executable: executable, mirrorKey: mirrorKey)
+    }
+
     public init(urls: [URL], destination: URL, sha1: String?, executable: Bool = false, mirrorKey: String? = nil) {
+        self.init(
+            urls: urls,
+            destination: destination,
+            checksums: sha1.map { ["sha1": $0] },
+            executable: executable,
+            mirrorKey: mirrorKey
+        )
+    }
+
+    public init(urls: [URL], destination: URL, checksums: [String: String]?, executable: Bool = false, mirrorKey: String? = nil) {
         guard let firstURL = urls.first else {
             preconditionFailure("DownloadItem 至少需要一个下载 URL")
         }
@@ -27,7 +42,8 @@ public struct DownloadItem: Hashable {
         self.urls = urls
         self.mirrorKey = mirrorKey
         self.destination = destination
-        self.sha1 = sha1
+        self.checksums = checksums
+        self.sha1 = checksums?["sha1"]?.lowercased()
         self.executable = executable
     }
 }

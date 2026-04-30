@@ -13,20 +13,20 @@ struct AboutPage: View {
         CardContainer {
             MyCard("关于", foldable: false) {
                 VStack(spacing: 0) {
-                    ProfileView("LTCatt", "龙腾猫跃", "Plain Craft Launcher 的作者！",
+                    ProfileView(.local(.ltCatt), "龙腾猫跃", "Plain Craft Launcher 的作者！",
                                 .init("GitHub 主页", "https://github.com/LTCatt"),
                                 .init("前往赞助", "https://afdian.com/a/LTCat"))
                     
-                    ProfileView("AnemoFlower", "风花AnemoFlower", "PCL.Mac 的作者",
+                    ProfileView(.network(url: "https://cylorine.studio/img/avatar/AnemoFlower.png"), "风花AnemoFlower", "PCL.Mac 的作者",
                                 .init("GitHub 主页", "https://github.com/AnemoFlower"),
                                 .init("Bilibili 主页", "https://space.bilibili.com/3461564927576750"),
                                 .init("前往赞助", "https://afdian.com/a/AnemoFlower"))
                     
-                    ProfileView("https://cylorine.studio/img/cylorine-studio.png", "Cylorine Studio", "PCL.Mac 的开发团队",
+                    ProfileView(.network(url: "https://cylorine.studio/img/avatar/CylorineStudio.png"), "Cylorine Studio", "PCL.Mac 的开发团队",
                                 .init("GitHub 主页", "https://github.com/CylorineStudio"),
                                 .init("官方网站", "https://cylorine.studio"))
                     
-                    ProfileView("PCL.Mac", "PCL.Mac.Refactor", "当前版本：\(Metadata.appVersion) (\(Metadata.bundleVersion))",
+                    ProfileView(.local(.pclMac), "PCL.Mac.Refactor", "当前版本：\(Metadata.appVersion) (\(Metadata.bundleVersion))",
                                 .init("GitHub 仓库", "https://github.com/CylorineStudio/PCL.Mac.Refactor"),
                                 .init("官网页面", "https://cylorine.studio/projects/PCL.Mac.Refactor"))
                 }
@@ -34,24 +34,42 @@ struct AboutPage: View {
             
             MyCard("特别鸣谢", foldable: false) {
                 VStack(spacing: 0) {
-                    ProfileView("PCL-Community", "PCL Community", "Plain Craft Launcher 非官方社区",
+                    ProfileView(.local(.pclCommunity), "PCL Community", "Plain Craft Launcher 非官方社区",
                                 .init("GitHub 主页", "https://github.com/PCL-Community"))
                     
-                    ProfileView("PCL.Proto", "PCL.Proto", "以 PCL2 和 PCL2-CE 为蓝本，旨在为各 PCL 分支版本提供一个标准化的原型样本。",
+                    ProfileView(.local(.pclProto), "PCL.Proto", "以 PCL2 和 PCL2-CE 为蓝本，旨在为各 PCL 分支版本提供一个标准化的原型样本。",
                                 .init("GitHub 仓库", "https://github.com/PCL-Community/PCL.Proto"))
                     
-                    ProfileView("bangbang93", "bangbang93", "提供 BMCLAPI 镜像源，详见 https://bmclapi.bangbang93.com",
+                    ProfileView(.local(.bangbang93), "bangbang93", "提供 BMCLAPI 镜像源，详见 https://bmclapi.bangbang93.com",
                                 .init("前往赞助", "https://afdian.com/a/bangbang93"))
                 }
             }
             
             MyCard("许可与版权声明", foldable: false) {
-                VStack(spacing: 0) {
-                    LicenseListItem("SwiftyJSON", license: "MIT", github: "SwiftyJSON/SwiftyJSON")
-                    LicenseListItem("ZIPFoundation", license: "MIT", github: "weichsel/ZIPFoundation")
-                    LicenseListItem("SwiftScaffolding", license: "MIT", github: "CylorineStudio/SwiftScaffolding")
-                    LicenseListItem("EasyTier", license: "LGPL-3.0", github: "EasyTier/EasyTier")
+                VStack(spacing: 15) {
+                    LicenseListItem(
+                        "SwiftyJSON", "Copyright (c) 2017 Ruoyu Fu\nLicensed under the MIT License.",
+                        sourceURL: "https://github.com/SwiftyJSON/SwiftyJSON",
+                        licenseURL: "https://github.com/SwiftyJSON/SwiftyJSON/blob/master/LICENSE"
+                    )
+                    LicenseListItem(
+                        "ZIPFoundation", "Copyright (c) 2017-2025 Thomas Zoechling (https://www.peakstep.com)\nLicensed under the MIT License.",
+                        sourceURL: "https://github.com/weichsel/ZIPFoundation",
+                        licenseURL: "https://github.com/weichsel/ZIPFoundation/blob/development/LICENSE"
+                    )
+                    LicenseListItem(
+                        "SwiftScaffolding", "Copyright (c) 2025-2026 CylorineStudio\nLicensed under the MIT License.",
+                        sourceURL: "https://github.com/CylorineStudio/SwiftScaffolding",
+                        licenseURL: "https://github.com/CylorineStudio/SwiftScaffolding/blob/main/LICENSE"
+                    )
+                    LicenseListItem(
+                        "EasyTier", "Copyright (c) 2024-present Easytier Programme within The Commons Conservancy\nLicensed under the LGPL 3.0 License.",
+                        sourceURL: "https://github.com/EasyTier/EasyTier",
+                        licenseURL: "https://github.com/EasyTier/EasyTier/blob/main/LICENSE"
+                    )
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
             }
         }
     }
@@ -60,18 +78,18 @@ struct AboutPage: View {
         @ObservedObject private var easterEggManager: EasterEggManager = .shared
         @Environment(\.disableHoverAnimation) private var cardAppearAnimationPlaying: Bool
         
-        private let image: String
-        private let imageURL: URL?
+        private let avatar: Avatar
+        private let avatarURL: URL?
         private let nickname: String
         private let description: String
         private let links: [Link]
         
-        init(_ image: String, _ nickname: String, _ description: String, _ links: Link...) {
-            self.image = image
-            if let url: URL = .init(string: image), url.scheme == "https" {
-                self.imageURL = url
+        init(_ avatar: Avatar, _ nickname: String, _ description: String, _ links: Link...) {
+            self.avatar = avatar
+            if case .network(let url) = avatar {
+                self.avatarURL = URL(string: url)
             } else {
-                self.imageURL = nil
+                self.avatarURL = nil
             }
             self.nickname = nickname
             self.description = description
@@ -82,11 +100,14 @@ struct AboutPage: View {
             MyListItem {
                 HStack {
                     Group {
-                        if let imageURL {
-                            NetworkImage(url: imageURL)
-                        } else {
-                            Image(image)
-                                .resizable()
+                        switch avatar {
+                        case .local(let imageResource): Image(imageResource).resizable()
+                        case .network(_):
+                            if let avatarURL {
+                                NetworkImage(url: avatarURL)
+                            } else {
+                                Image(nsImage: .init())
+                            }
                         }
                     }
                     .scaledToFit()
@@ -123,21 +144,48 @@ struct AboutPage: View {
                 self.url = url
             }
         }
+        
+        enum Avatar {
+            case local(ImageResource)
+            case network(url: String)
+        }
     }
     
     private struct LicenseListItem: View {
         private let name: String
-        private let license: String
-        private let github: String
+        private let info: String
+        private let sourceURL: URL
+        private let licenseURL: URL
         
-        init(_ name: String, license: String, github: String) {
+        init(_ name: String, _ info: String, sourceURL: String, licenseURL: String) {
             self.name = name
-            self.license = license
-            self.github = github
+            self.info = info
+            self.sourceURL = URL(string: sourceURL)!
+            self.licenseURL = URL(string: licenseURL)!
         }
         
         var body: some View {
-            MyListItem(.init(name: name, description: "\(license) license | https://github.com/\(github)"))
+            HStack(alignment: .top, spacing: 20) {
+                MyText(name)
+                    .frame(width: 120, alignment: .leading)
+                VStack(alignment: .leading, spacing: 7) {
+                    MyText(info)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 20) {
+                        MyButton("查看来源网站") {
+                            NSWorkspace.shared.open(sourceURL)
+                        }
+                        .frame(width: 140)
+                        MyButton("查看许可文档") {
+                            NSWorkspace.shared.open(licenseURL)
+                        }
+                        .frame(width: 140)
+                    }
+                    .frame(height: 38)
+                }
+                Spacer(minLength: 0)
+            }
         }
     }
 }

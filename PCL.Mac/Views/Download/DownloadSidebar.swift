@@ -21,7 +21,7 @@ struct DownloadSidebar: Sidebar {
                     .padding(.leading, 13)
                     .padding(.top, 10)
                 MyNavigationList(
-                    .init(.minecraftDownload, "DownloadSidebarMinecraftIcon", "Minecraft")
+                    .init(.minecraftDownload, .downloadSidebarMinecraftIcon, "Minecraft")
                 ) { route in
                     switch route {
                     case .minecraftDownload:
@@ -35,13 +35,13 @@ struct DownloadSidebar: Sidebar {
                     .padding(.leading, 13)
                     .padding(.top, 20)
                 MyNavigationList(
-                    .init(.modDownload, "IconMod", "Mod"),
-                    .init(.modpackDownload, "IconBox", "整合包"),
-                    .init(.datapackDownload, "DownloadSidebarDatapackIcon", "数据包"),
-                    .init(.resourcepackDownload, "IconPicture", "资源包"),
-                    .init(.shaderpackDownload, "IconSun", "光影包"),
-                    .init(.worldDownload, "DownloadSidebarWorldIcon", "世界"),
-                    .init(.favoritesDownload, "DownloadSidebarFavoritesIcon", "收藏夹")
+                    .init(.modDownload, .iconMod, "Mod"),
+                    .init(.modpackDownload, .iconBox, "整合包"),
+                    .init(.datapackDownload, .downloadSidebarDatapackIcon, "数据包"),
+                    .init(.resourcepackDownload, .iconPicture, "资源包"),
+                    .init(.shaderpackDownload, .iconSun, "光影包"),
+                    .init(.worldDownload, .downloadSidebarWorldIcon, "世界"),
+                    .init(.favoritesDownload, .downloadSidebarFavoritesIcon, "收藏夹")
                 )
 
                 MyText("安装包", size: 12, color: .colorGray2)
@@ -49,16 +49,16 @@ struct DownloadSidebar: Sidebar {
                     .padding(.leading, 13)
                     .padding(.top, 20)
                 MyNavigationList(
-                    .init(.installerMinecraftDownload, "DownloadSidebarMinecraftIcon", "Minecraft"),
-                    .init(.installerOptiFineDownload, "DownloadSidebarOptiFineIcon", "OptiFine"),
-                    .init(.installerForgeDownload, "DownloadSidebarForgeIcon", "Forge"),
-                    .init(.installerNeoForgeDownload, "DownloadSidebarForgeIcon", "NeoForge"),
-                    .init(.installerCleanroomDownload, "DownloadSidebarCleanroomIcon", "Cleanroom"),
-                    .init(.installerFabricDownload, "DownloadSidebarFabricIcon", "Fabric"),
-                    .init(.installerLegacyFabricDownload, "DownloadSidebarFabricIcon", "Legacy Fabric"),
-                    .init(.installerQuiltDownload, "DownloadSidebarQuiltIcon", "Quilt"),
-                    .init(.installerLabyModDownload, "DownloadSidebarLabyModIcon", "LabyMod"),
-                    .init(.installerLiteLoaderDownload, "DownloadSidebarLiteLoaderIcon", "LiteLoader")
+                    .init(.installerMinecraftDownload, .downloadSidebarMinecraftIcon, "Minecraft"),
+                    .init(.installerOptiFineDownload, .downloadSidebarOptiFineIcon, "OptiFine"),
+                    .init(.installerForgeDownload, .downloadSidebarForgeIcon, "Forge"),
+                    .init(.installerNeoForgeDownload, .downloadSidebarForgeIcon, "NeoForge"),
+                    .init(.installerCleanroomDownload, .downloadSidebarCleanroomIcon, "Cleanroom"),
+                    .init(.installerFabricDownload, .downloadSidebarFabricIcon, "Fabric"),
+                    .init(.installerLegacyFabricDownload, .downloadSidebarFabricIcon, "Legacy Fabric"),
+                    .init(.installerQuiltDownload, .downloadSidebarQuiltIcon, "Quilt"),
+                    .init(.installerLabyModDownload, .downloadSidebarLabyModIcon, "LabyMod"),
+                    .init(.installerLiteLoaderDownload, .downloadSidebarLiteLoaderIcon, "LiteLoader")
                 )
                 Spacer(minLength: 12)
             }

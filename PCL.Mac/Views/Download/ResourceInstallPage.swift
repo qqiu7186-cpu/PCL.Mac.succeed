@@ -81,10 +81,10 @@ struct ResourceInstallPage: View {
                                 .lineLimit(2)
 
                             HStack(spacing: 18) {
-                                HeaderInfoView(icon: "SettingsPageIcon", text: project.supportDescription)
-                                HeaderInfoView(icon: "DownloadPageIcon", text: project.downloads)
-                                HeaderInfoView(icon: "IconUpload", text: project.lastUpdate)
-                                HeaderInfoView(icon: "IconAbout", text: "Modrinth")
+                                HeaderInfoView(icon: .iconSettingsPage, text: project.supportDescription)
+                                HeaderInfoView(icon: .iconDownloadPage, text: project.downloads)
+                                HeaderInfoView(icon: .iconUpload, text: project.lastUpdate)
+                                HeaderInfoView(icon: .iconAbout, text: "Modrinth")
                             }
                         }
                     }
@@ -92,10 +92,10 @@ struct ResourceInstallPage: View {
                     HStack(spacing: 8) {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                actionButton(icon: "IconAbout", text: "打开来源页", action: openProjectPage)
-                                actionButton(icon: "IconCopy", text: "复制项目 ID", action: copyProjectID)
-                                actionButton(icon: "IconCopy", text: "复制项目名", action: copyProjectName)
-                                actionButton(icon: favoritesStore.contains(project.id) ? "IconFavoriteFilled" : "IconFavorite", text: favoritesStore.contains(project.id) ? "取消收藏" : "收藏") {
+                    actionButton(icon: .iconAbout, text: "打开来源页", action: openProjectPage)
+                    actionButton(icon: .iconCopy, text: "复制项目 ID", action: copyProjectID)
+                    actionButton(icon: .iconCopy, text: "复制项目名", action: copyProjectName)
+                    actionButton(icon: favoritesStore.contains(project.id) ? .iconFavoriteFilled : .iconFavorite, text: favoritesStore.contains(project.id) ? "取消收藏" : "收藏") {
                                     favoritesStore.toggle(project.id, name: project.title)
                                 }
                             }
@@ -215,7 +215,7 @@ struct ResourceInstallPage: View {
         
         init(version: ProjectVersionModel) {
             self.model = .init(
-                image: "\(version.type.rawValue.capitalized)Block",
+                image: version.type.icon,
                 name: version.name,
                 description: [
                     version.version,
@@ -235,7 +235,7 @@ struct ResourceInstallPage: View {
     }
 
     private struct HeaderInfoView: View {
-        let icon: String?
+        let icon: ImageResource?
         let text: String
 
         var body: some View {
@@ -291,7 +291,7 @@ struct ResourceInstallPage: View {
             }
     }
 
-    private func actionButton(icon: String, text: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: ImageResource, text: String, action: @escaping () -> Void) -> some View {
         actionButton(icon: icon, systemIcon: nil, text: text, action: action)
     }
 
@@ -299,7 +299,7 @@ struct ResourceInstallPage: View {
         actionButton(icon: nil, systemIcon: systemIcon, text: text, action: action)
     }
 
-    private func actionButton(icon: String?, systemIcon: String?, text: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: ImageResource?, systemIcon: String?, text: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let icon {
@@ -352,12 +352,12 @@ struct ResourceInstallPage: View {
         return "\(parts[0]).\(parts[1])"
     }
 
-    private func defaultProjectIcon(for type: ModrinthProjectType) -> String {
+    private func defaultProjectIcon(for type: ModrinthProjectType) -> ImageResource {
         switch type {
-        case .mod: "IconMod"
-        case .modpack: "IconBox"
-        case .resourcepack: "IconPicture"
-        case .shader: "IconSun"
+        case .mod: .iconMod
+        case .modpack: .iconBox
+        case .resourcepack: .iconPicture
+        case .shader: .iconSun
         }
     }
 

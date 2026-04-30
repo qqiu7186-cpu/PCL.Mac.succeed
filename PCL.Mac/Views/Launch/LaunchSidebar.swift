@@ -12,10 +12,19 @@ struct LaunchSidebar: Sidebar {
     @EnvironmentObject private var instanceViewModel: InstanceManager
     @ObservedObject private var launchManager: MinecraftLaunchManager = .shared
     @StateObject private var accountViewModel: AccountViewModel = .init()
-    @State private var showingAccountEditor: Bool = false
-    @State private var accountEditAppeared: Bool = false
+    @State private var showingAccountList: Bool = false
     
     let width: CGFloat = 285
+    
+    private let insertTransition: AnyTransition =
+        .asymmetric(
+            insertion: .modifier(
+                active: ScaleOpacityEffect(scale: 0.95, opacity: 0.0),
+                identity: ScaleOpacityEffect(scale: 1.0, opacity: 1.0)
+            )
+            .animation(.spring(response: 0.2)),
+            removal: .opacity
+        )
     
     var body: some View {
         if launchManager.isLaunching {
@@ -28,26 +37,18 @@ struct LaunchSidebar: Sidebar {
     private var normalBody: some View {
         VStack {
             Spacer()
-            if showingAccountEditor {
-                accountEditorView
-                    .opacity(accountEditAppeared ? 1 : 0)
-                    .scaleEffect(accountEditAppeared ? 1 : 0.95)
-                    .animation(.spring(response: 0.2), value: accountEditAppeared)
-                    .onAppear {
-                        accountEditAppeared = true
-                    }
-            } else if let account = accountViewModel.currentAccount {
-                MyListItem {
-                    VStack(spacing: 15) {
-                        PlayerAvatar(account)
-                        MyText(account.profile.name, size: 16)
-                    }
-                }
-                .fixedSize()
-                .onTapGesture {
-                    showingAccountEditor = true
+            Group {
+                if showingAccountList {
+                    accountListPanel
+                } else if let account = accountViewModel.currentAccount {
+                    normalPanel(account)
+                        .onTapGesture {
+                            showingAccountList = true
+                        }
                 }
             }
+            .transition(insertTransition)
+            
             Spacer()
             VStack(spacing: 11) {
                 Group {
@@ -61,7 +62,7 @@ struct LaunchSidebar: Sidebar {
                             if let account: Account = accountViewModel.currentAccount {
                                 instanceViewModel.launch(instance, account, in: repository)
                             } else {
-                                hint("你还没有添加账号！", type: .critical)
+                                hint("请先添加一个账号！", type: .critical)
                             }
                         }
                     } else {
@@ -88,20 +89,24 @@ struct LaunchSidebar: Sidebar {
                 .frame(height: 32)
             }
             .padding(21)
-            .onAppear {
-                if accountViewModel.currentAccount == nil { showingAccountEditor = true }
+        }
+    }
+    
+    @ViewBuilder
+    private func normalPanel(_ account: Account) -> some View {
+        MyListItem {
+            VStack(spacing: 15) {
+                PlayerAvatar(account)
+                VStack(spacing: 4) {
+                    MyText(account.profile.name, size: 16)
+                    MyText(account.type.localizedName, size: 12, color: .colorGray4)
+                }
             }
         }
+        .fixedSize()
     }
     
-    private func hideAccountEditor() {
-        accountEditAppeared = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            showingAccountEditor = false
-        }
-    }
-    
-    private var accountEditorView: some View {
+    private var accountListPanel: some View {
         VStack {
             accountList
                 .padding(.horizontal, 8)
@@ -113,7 +118,7 @@ struct LaunchSidebar: Sidebar {
                 
                 if accountViewModel.currentAccount != nil {
                     MyButton("返回") {
-                        hideAccountEditor()
+                        showingAccountList = false
                     }
                     .frame(width: 50)
                 }
@@ -159,6 +164,7 @@ struct LaunchSidebar: Sidebar {
                 }
                 .onTapGesture {
                     accountViewModel.switchAccount(to: account)
+                    showingAccountList = false
                 }
             }
         }
@@ -242,6 +248,16 @@ struct LaunchSidebar: Sidebar {
             value()
         }
     }
+    
+    @ViewBuilder
+    private func fieldLine(_ name: String, content: () -> some View) -> some View {
+        HStack(spacing: 0) {
+            MyText(name)
+                .frame(width: 50, alignment: .leading)
+            content()
+        }
+        .padding(.horizontal)
+    }
 }
 
 private struct AnimatablePercentText: View, Animatable {
@@ -254,5 +270,16 @@ private struct AnimatablePercentText: View, Animatable {
     var body: some View {
         let clamped: Double = min(max(progress, 0), 1)
         MyText(String(format: "%.2f %%", clamped * 100), size: 12.5)
+    }
+}
+
+private struct ScaleOpacityEffect: ViewModifier {
+    let scale: CGFloat
+    let opacity: Double
+    
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(scale)
+            .opacity(opacity)
     }
 }

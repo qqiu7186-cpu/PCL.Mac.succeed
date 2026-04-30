@@ -37,6 +37,17 @@ public enum SingleFileDownloader {
     }
 
     public static func download(
+        url: URL,
+        destination: URL,
+        checksums: [String: String]?,
+        executable: Bool = false,
+        replaceMethod: ReplaceMethod,
+        progressHandler: (@MainActor (Double) -> Void)? = nil
+    ) async throws {
+        try await download(urls: [url], destination: destination, checksums: checksums, executable: executable, replaceMethod: replaceMethod, progressHandler: progressHandler)
+    }
+
+    public static func download(
         urls: [URL],
         mirrorKey: String? = nil,
         destination: URL,
@@ -45,9 +56,21 @@ public enum SingleFileDownloader {
         replaceMethod: ReplaceMethod,
         progressHandler: (@MainActor (Double) -> Void)? = nil
     ) async throws {
+        try await download(urls: urls, mirrorKey: mirrorKey, destination: destination, checksums: sha1.map { ["sha1": $0] }, executable: executable, replaceMethod: replaceMethod, progressHandler: progressHandler)
+    }
+
+    public static func download(
+        urls: [URL],
+        mirrorKey: String? = nil,
+        destination: URL,
+        checksums: [String: String]?,
+        executable: Bool = false,
+        replaceMethod: ReplaceMethod,
+        progressHandler: (@MainActor (Double) -> Void)? = nil
+    ) async throws {
         // 文件已存在处理
         if FileManager.default.fileExists(atPath: destination.path) {
-            if let sha1, try FileUtils.sha1(of: destination) != sha1 {
+            if let checksums, try FileUtils.checkFile(at: destination, with: checksums) == false {
                 try FileManager.default.removeItem(at: destination)
             } else {
                 switch replaceMethod {
@@ -87,8 +110,8 @@ public enum SingleFileDownloader {
                     }
 
                     // 验证 SHA-1
-                    if let sha1 {
-                        guard try FileUtils.sha1(of: destination) == sha1 else {
+                    if let checksums {
+                        guard try FileUtils.checkFile(at: destination, with: checksums) else {
                             try FileManager.default.removeItem(at: destination)
                             throw DownloadError.checksumMismatch
                         }

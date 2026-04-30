@@ -40,7 +40,7 @@ struct InstanceListPage: View {
                                 MyCard("错误实例（\(errorInstances.count)）", foldable: false, padding: 14) {
                                     VStack(spacing: 0) {
                                         ForEach(errorInstances, id: \.name) { instance in
-                                            MyListItem(.init(image: "RedstoneBlock", name: instance.name, description: instance.message))
+                                            MyListItem(.init(image: .iconRedstoneBlock, name: instance.name, description: instance.message))
                                         }
                                     }
                                 }
@@ -178,7 +178,7 @@ struct InstanceListPage: View {
 private struct InstanceSelectionRow: View {
     private let name: String
     private let version: MinecraftVersion
-    private let iconName: String
+    private let iconName: ImageResource
     private let selected: Bool
     private let onTap: () -> Void
     @State private var hovered: Bool = false
@@ -191,7 +191,7 @@ private struct InstanceSelectionRow: View {
         if let modLoader = instance.modLoader {
             self.iconName = modLoader.icon
         } else {
-            self.iconName = "GrassBlock"
+            self.iconName = .iconGrassBlock
         }
     }
     

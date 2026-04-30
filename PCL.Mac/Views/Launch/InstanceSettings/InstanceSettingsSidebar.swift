@@ -23,10 +23,10 @@ struct InstanceSettingsSidebar: Sidebar {
                 .padding(.top, 12)
                 .padding(.bottom, 4)
             MyNavigationList(
-                .init(.instanceOverview(id: id), "GameDownloadIcon", "概览"),
-                .init(.instanceConfig(id: id), "SettingsPageIcon", "设置"),
-                .init(.instanceModify(id: id), "SettingsPageIcon", "修改"),
-                .init(.instanceExport(id: id), "DownloadPageIcon", "导出")
+                .init(.instanceOverview(id: id), .gameDownloadIcon, "概览"),
+                .init(.instanceConfig(id: id), .iconSettingsPage, "设置"),
+                .init(.instanceModify(id: id), .iconSettingsPage, "修改"),
+                .init(.instanceExport(id: id), .iconDownloadPage, "导出")
             )
 
             MyText("游戏资源", size: 11, color: .colorGray3)
@@ -41,13 +41,13 @@ struct InstanceSettingsSidebar: Sidebar {
 
     private var resourceRoutes: [MyNavigationList.Route] {
         [
-            .init(.instanceSaves(id: id), "IconBox", "存档"),
-            .init(.instanceScreenshots(id: id), "IconPicture", "截图"),
-            .init(.instanceMods(id: id), "IconMod", "模组"),
-            .init(.instanceResourcepacks(id: id), "IconPicture", "资源包"),
-            .init(.instanceShaderpacks(id: id), "IconSun", "光影包"),
-            .init(.instanceSchematics(id: id), "IconBox", "投影原理图"),
-            .init(.instanceServers(id: id), "SettingsPageIcon", "服务器")
+            .init(.instanceSaves(id: id), .iconBox, "存档"),
+            .init(.instanceScreenshots(id: id), .iconPicture, "截图"),
+            .init(.instanceMods(id: id), .iconMod, "模组"),
+            .init(.instanceResourcepacks(id: id), .iconPicture, "资源包"),
+            .init(.instanceShaderpacks(id: id), .iconSun, "光影包"),
+            .init(.instanceSchematics(id: id), .iconBox, "投影原理图"),
+            .init(.instanceServers(id: id), .iconSettingsPage, "服务器")
         ]
     }
 }

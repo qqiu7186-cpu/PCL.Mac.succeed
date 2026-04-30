@@ -17,7 +17,7 @@ public class OfflineAccount: Account {
     }
     
     public func accessToken() -> String {
-        return UUIDUtils.string(of: .init(), withHyphens: false) // 随机 UUID
+        UUIDUtils.string(of: .init(), withHyphens: false) // 随机 UUID
     }
     
     public func refresh() async throws {}

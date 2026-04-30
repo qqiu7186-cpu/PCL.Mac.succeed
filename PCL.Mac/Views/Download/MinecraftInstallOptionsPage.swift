@@ -58,7 +58,7 @@ struct MinecraftInstallOptionsPage: View {
             .padding(EdgeInsets(top: 10, leading: 25, bottom: 25, trailing: 25))
         }
         .overlay(alignment: .bottom) {
-            MyExtraTextButton(image: "DownloadPageIcon", imageSize: 20, text: "开始下载") {
+            MyExtraTextButton(icon: .iconDownloadPage, imageSize: 20, text: "开始下载") {
                 guard let repository = instanceVM.currentRepository else {
                     warn("试图安装 \(viewModel.version)，但没有设置游戏仓库")
                     hint("请先添加一个游戏目录！", type: .critical)
@@ -73,11 +73,11 @@ struct MinecraftInstallOptionsPage: View {
         .animation(.spring(duration: 0.2), value: viewModel.errorMessage)
     }
     
-    private var icon: String {
+    private var icon: ImageResource {
         if let loader = viewModel.loader {
             return loader.type.icon
         } else {
-            return viewModel.version.type == .snapshot ? "Dirt" : "GrassBlock"
+            return viewModel.version.type == .snapshot ? .iconDirt : .iconGrassBlock
         }
     }
 }

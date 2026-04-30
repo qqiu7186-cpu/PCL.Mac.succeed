@@ -54,16 +54,16 @@ class EasyTierManager {
     
     public func makeEasyTier() -> EasyTier {
         easyTierInstances.removeAll { $0.process == nil }
-        let instance: EasyTier = .init(
-            coreURL: coreURL,
-            cliURL: cliURL,
-            logURL: logURL,
+        var options: [EasyTier.Option] = [
             .p2pOnly,
             .peer(address: "tcp://public.easytier.top:11010"),
             .peer(address: "tcp://public2.easytier.cn:54321"),
-            // SwiftScaffolding 不支持通过 Option 数组构造 EasyTier
-            LauncherConfig.shared.multiplayerCustomPeer.map { .peer(address: $0) } ?? .p2pOnly
-        )
+            .enableKcpProxy, .latencyFirst, .multiThread, .compression(algorithm: "zstd")
+        ]
+        if let customPeer = LauncherConfig.shared.multiplayerCustomPeer {
+            options.append(.peer(address: customPeer))
+        }
+        let instance: EasyTier = .init(coreURL: coreURL, cliURL: cliURL, logURL: logURL, options: options)
         easyTierInstances.append(instance)
         return instance
     }
@@ -151,6 +151,6 @@ class EasyTierManager {
     
     private func checkSingle(type: ComponentType) -> Bool {
         let item: DownloadItem = downloadItems[type]!
-        return FileUtils.isExecutable(at: item.destination) && (try? FileUtils.sha1(of: item.destination)) == item.sha1
+        return FileUtils.isExecutable(at: item.destination) && (try? FileUtils.check(item)) == true
     }
 }

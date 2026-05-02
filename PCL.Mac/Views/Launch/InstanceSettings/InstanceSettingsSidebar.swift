@@ -23,10 +23,10 @@ struct InstanceSettingsSidebar: Sidebar {
                 .padding(.top, 12)
                 .padding(.bottom, 4)
             MyNavigationList(
-                .init(.instanceOverview(id: id), .gameDownloadIcon, "概览"),
+                .init(.instanceOverview(id: id), .iconAbout, "概览"),
                 .init(.instanceConfig(id: id), .iconSettingsPage, "设置"),
-                .init(.instanceModify(id: id), .iconSettingsPage, "修改"),
-                .init(.instanceExport(id: id), .iconDownloadPage, "导出")
+                .init(.instanceModify(id: id), .iconMod, "修改"),
+                .init(.instanceExport(id: id), .iconUpload, "导出")
             )
 
             MyText("游戏资源", size: 11, color: .colorGray3)
@@ -47,7 +47,7 @@ struct InstanceSettingsSidebar: Sidebar {
             .init(.instanceResourcepacks(id: id), .iconPicture, "资源包"),
             .init(.instanceShaderpacks(id: id), .iconSun, "光影包"),
             .init(.instanceSchematics(id: id), .iconBox, "投影原理图"),
-            .init(.instanceServers(id: id), .iconSettingsPage, "服务器")
+            .init(.instanceServers(id: id), .iconMultiplayerPage, "服务器")
         ]
     }
 }

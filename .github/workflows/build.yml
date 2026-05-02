@@ -30,7 +30,7 @@ jobs:
         run: |
           echo "Build number: $BUILD_NUMBER"
           xcodebuild archive \
-            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Debug \
+            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release \
             CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             -archivePath build
 

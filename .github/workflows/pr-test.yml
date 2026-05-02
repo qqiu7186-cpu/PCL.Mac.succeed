@@ -30,7 +30,7 @@ jobs:
           BUILD_NUMBER=$(printf "%d%05d" "$PR_NUMBER" "$(git rev-list --count HEAD)")
 
           xcodebuild archive \
-            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Debug \
+            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release \
             CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             -archivePath build
 

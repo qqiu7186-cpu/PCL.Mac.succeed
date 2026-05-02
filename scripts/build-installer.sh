@@ -9,12 +9,17 @@ DMG_ROOT="${DIST_DIR}/dmgroot"
 TEMP_DMG="${DIST_DIR}/PCL.Mac-Installer-Visual-temp.dmg"
 FINAL_DMG="${DIST_DIR}/PCL.Mac-Installer-Visual.dmg"
 BACKGROUND_PATH="${DMG_ROOT}/.background/installer-background.png"
+BUILD_NUMBER="${CURRENT_PROJECT_VERSION:-}"
 
 mkdir -p "${DIST_DIR}"
 rm -rf "${DMG_ROOT}"
 mkdir -p "${DMG_ROOT}/.background"
 
-xcodebuild build -project "${ROOT_DIR}/PCL.Mac.xcodeproj" -scheme "PCL.Mac" -configuration Release -destination 'platform=macOS'
+BUILD_COMMAND=(xcodebuild build -project "${ROOT_DIR}/PCL.Mac.xcodeproj" -scheme "PCL.Mac" -configuration Release -destination 'platform=macOS')
+if [[ -n "${BUILD_NUMBER}" ]]; then
+  BUILD_COMMAND+=("CURRENT_PROJECT_VERSION=${BUILD_NUMBER}")
+fi
+"${BUILD_COMMAND[@]}"
 
 codesign --force --sign - --deep "${APP_PATH}"
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
@@ -36,17 +41,29 @@ NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 let ctx = NSGraphicsContext.current!.cgContext
 
 let bg = NSRect(x: 0, y: 0, width: width, height: height)
-let gradient = NSGradient(colors: [
-    NSColor(calibratedRed: 0.98, green: 0.985, blue: 0.992, alpha: 1),
-    NSColor(calibratedRed: 0.95, green: 0.965, blue: 0.98, alpha: 1)
-])!
-gradient.draw(in: bg, angle: 90)
+NSColor(calibratedRed: 0.90, green: 0.95, blue: 0.99, alpha: 1).setFill()
+bg.fill()
 
-let card = NSBezierPath(roundedRect: NSRect(x: 26, y: 26, width: 748, height: 468), xRadius: 26, yRadius: 26)
-NSColor.white.withAlphaComponent(0.9).setFill(); card.fill()
-let border = NSBezierPath(roundedRect: NSRect(x: 26, y: 26, width: 748, height: 468), xRadius: 26, yRadius: 26)
+let softGradient = NSGradient(colors: [
+    NSColor(calibratedRed: 0.96, green: 0.98, blue: 1.00, alpha: 0.0),
+    NSColor(calibratedRed: 0.78, green: 0.89, blue: 1.00, alpha: 0.22)
+])!
+softGradient.draw(in: bg, angle: 90)
+
+ctx.saveGState()
+ctx.setFillColor(NSColor.white.withAlphaComponent(0.45).cgColor)
+ctx.fillEllipse(in: CGRect(x: -90, y: 300, width: 260, height: 260))
+ctx.setFillColor(NSColor(calibratedRed: 0.52, green: 0.78, blue: 1.0, alpha: 0.12).cgColor)
+ctx.fillEllipse(in: CGRect(x: 560, y: 40, width: 280, height: 280))
+ctx.restoreGState()
+
+let bannerRect = NSRect(x: 22, y: 22, width: 756, height: 476)
+let banner = NSBezierPath(roundedRect: bannerRect, xRadius: 24, yRadius: 24)
+NSColor.white.withAlphaComponent(0.38).setFill(); banner.fill()
+
+let border = NSBezierPath(roundedRect: bannerRect, xRadius: 24, yRadius: 24)
 border.lineWidth = 1
-NSColor(calibratedRed: 0.84, green: 0.88, blue: 0.93, alpha: 1).setStroke(); border.stroke()
+NSColor.white.withAlphaComponent(0.55).setStroke(); border.stroke()
 
 func draw(_ text: String, rect: NSRect, font: NSFont, color: NSColor, alignment: NSTextAlignment = .left) {
     let style = NSMutableParagraphStyle()
@@ -60,30 +77,41 @@ func draw(_ text: String, rect: NSRect, font: NSFont, color: NSColor, alignment:
     text.draw(in: rect, withAttributes: attrs)
 }
 
-draw("安装 PCL.Mac", rect: NSRect(x: 60, y: 420, width: 340, height: 36), font: .systemFont(ofSize: 30, weight: .bold), color: NSColor(calibratedRed: 0.12, green: 0.16, blue: 0.22, alpha: 1))
-draw("将左侧应用拖到右侧“应用程序”文件夹", rect: NSRect(x: 60, y: 382, width: 580, height: 28), font: .systemFont(ofSize: 18, weight: .semibold), color: NSColor(calibratedRed: 0.28, green: 0.35, blue: 0.45, alpha: 1))
-draw("安装完成后，请从“应用程序”中启动。\n如果系统有安全提示，请在“应用程序”里再次打开一次。", rect: NSRect(x: 60, y: 332, width: 520, height: 44), font: .systemFont(ofSize: 14, weight: .regular), color: NSColor(calibratedRed: 0.45, green: 0.50, blue: 0.58, alpha: 1))
-draw("拖动安装", rect: NSRect(x: 125, y: 135, width: 120, height: 22), font: .systemFont(ofSize: 17, weight: .semibold), color: NSColor(calibratedRed: 0.27, green: 0.34, blue: 0.42, alpha: 1), alignment: .center)
-draw("Applications", rect: NSRect(x: 560, y: 135, width: 160, height: 22), font: .systemFont(ofSize: 17, weight: .semibold), color: NSColor(calibratedRed: 0.27, green: 0.34, blue: 0.42, alpha: 1), alignment: .center)
+func drawBadge(_ text: String, rect: NSRect) {
+    let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+    NSColor.white.withAlphaComponent(0.95).setFill()
+    path.fill()
+    draw(text, rect: rect.offsetBy(dx: 0, dy: 6), font: .systemFont(ofSize: 13, weight: .semibold), color: NSColor(calibratedRed: 0.16, green: 0.34, blue: 0.62, alpha: 1), alignment: .center)
+}
+
+drawBadge("PCL.Mac Installer", rect: NSRect(x: 56, y: 430, width: 138, height: 28))
+draw("安装 PCL.Mac", rect: NSRect(x: 56, y: 388, width: 340, height: 34), font: .systemFont(ofSize: 32, weight: .bold), color: NSColor(calibratedRed: 0.15, green: 0.23, blue: 0.34, alpha: 1))
+draw("把左侧应用拖到右侧“应用程序”文件夹", rect: NSRect(x: 56, y: 352, width: 620, height: 26), font: .systemFont(ofSize: 18, weight: .semibold), color: NSColor(calibratedRed: 0.22, green: 0.33, blue: 0.46, alpha: 1))
+draw("安装完成后，请从“应用程序”中启动。\n若系统提示安全确认，请在“应用程序”内再次打开一次。", rect: NSRect(x: 56, y: 308, width: 520, height: 44), font: .systemFont(ofSize: 14, weight: .regular), color: NSColor(calibratedRed: 0.38, green: 0.47, blue: 0.58, alpha: 1))
+
+drawBadge("拖动安装", rect: NSRect(x: 86, y: 116, width: 170, height: 32))
+drawBadge("Applications", rect: NSRect(x: 544, y: 116, width: 170, height: 32))
 
 let arrow = NSBezierPath()
-arrow.move(to: CGPoint(x: 280, y: 252))
-arrow.line(to: CGPoint(x: 520, y: 252))
-arrow.lineWidth = 8
+arrow.move(to: CGPoint(x: 292, y: 252))
+arrow.curve(to: CGPoint(x: 510, y: 252), controlPoint1: CGPoint(x: 350, y: 248), controlPoint2: CGPoint(x: 450, y: 248))
+arrow.lineWidth = 9
 arrow.lineCapStyle = .round
-NSColor(calibratedRed: 0.55, green: 0.72, blue: 0.95, alpha: 1).setStroke(); arrow.stroke()
+NSColor(calibratedRed: 0.23, green: 0.60, blue: 0.95, alpha: 1).setStroke(); arrow.stroke()
 let head = NSBezierPath()
 head.move(to: CGPoint(x: 520, y: 252))
-head.line(to: CGPoint(x: 485, y: 278))
-head.line(to: CGPoint(x: 485, y: 226))
+head.line(to: CGPoint(x: 486, y: 278))
+head.line(to: CGPoint(x: 486, y: 226))
 head.close()
-NSColor(calibratedRed: 0.55, green: 0.72, blue: 0.95, alpha: 1).setFill(); head.fill()
+NSColor(calibratedRed: 0.23, green: 0.60, blue: 0.95, alpha: 1).setFill(); head.fill()
 
-draw("PCL.Mac Installer", rect: NSRect(x: 60, y: 54, width: 220, height: 18), font: .systemFont(ofSize: 12, weight: .medium), color: NSColor(calibratedRed: 0.58, green: 0.62, blue: 0.68, alpha: 1))
+draw("拖过去，就安装好了。", rect: NSRect(x: 280, y: 194, width: 244, height: 22), font: .systemFont(ofSize: 15, weight: .medium), color: NSColor(calibratedRed: 0.29, green: 0.41, blue: 0.55, alpha: 1), alignment: .center)
 
-ctx.setStrokeColor(NSColor(calibratedRed: 0.88, green: 0.91, blue: 0.95, alpha: 1).cgColor)
+draw("PCL.Mac Installer", rect: NSRect(x: 56, y: 50, width: 220, height: 18), font: .systemFont(ofSize: 12, weight: .medium), color: NSColor(calibratedRed: 0.52, green: 0.58, blue: 0.66, alpha: 1))
+
+ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.42).cgColor)
 ctx.setLineWidth(1)
-ctx.stroke(CGRect(x: 26, y: 26, width: 748, height: 468))
+ctx.stroke(CGRect(x: 22, y: 22, width: 756, height: 476))
 
 NSGraphicsContext.restoreGraphicsState()
 let pngData = rep.representation(using: .png, properties: [:])!
@@ -99,7 +127,7 @@ cp "${BACKGROUND_PATH}" "${VOLUME_PATH}/.background/installer-background.png"
 
 osascript <<APPLESCRIPT
 tell application "Finder"
-    tell disk "PCL.Mac"
+    tell folder (POSIX file "${VOLUME_PATH}")
         open
         set current view of container window to icon view
         set toolbar visible of container window to false
@@ -113,7 +141,7 @@ tell application "Finder"
         set position of item "PCL.Mac.app" to {150, 250}
         set position of item "Applications" to {620, 250}
         update without registering applications
-        delay 2
+        delay 3
         close
     end tell
 end tell

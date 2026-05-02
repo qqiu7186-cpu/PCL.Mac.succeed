@@ -11,7 +11,7 @@ import Core
 import ZIPFoundation
 
 class UpdateManager {
-    public static let shared: UpdateManager = .init(URL(string: "https://cylorine.studio/meta/PCL.Mac/update.json")!)
+    public static let shared: UpdateManager = .init(URL(string: "https://update.gzitvs.cn/meta/PCL.Mac/update.json")!)
     
     private let updateMetadataURL: URL
     

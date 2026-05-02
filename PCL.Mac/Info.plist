@@ -9,5 +9,11 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>SUFeedURL</key>
+	<string>https://update.gzitvs.cn/meta/PCL.Mac/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>$(SPARKLE_PUBLIC_ED_KEY)</string>
+	<key>SparkleChannel</key>
+	<string>$(SPARKLE_CHANNEL)</string>
 </dict>
 </plist>

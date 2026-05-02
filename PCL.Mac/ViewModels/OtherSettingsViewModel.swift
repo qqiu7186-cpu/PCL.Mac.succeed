@@ -7,10 +7,10 @@ final class OtherSettingsViewModel: ObservableObject {
 
     init(
         settingsExporter: SettingsLogExporting = SettingsViewModel.shared,
-        updateFlowRunner: AppUpdateFlowRunning = UpdateService.shared
+        updateFlowRunner: AppUpdateFlowRunning? = nil
     ) {
         self.settingsExporter = settingsExporter
-        self.updateFlowRunner = updateFlowRunner
+        self.updateFlowRunner = updateFlowRunner ?? UpdateService.shared
     }
 
     func exportLogs() throws -> URL {

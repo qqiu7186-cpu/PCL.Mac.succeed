@@ -12,3 +12,6 @@ dist/dmgroot/
 dist/*.temp.dmg
 dist/*-temp.dmg
 dist/.background/
+
+# Generated packaging / update test artifacts
+dist/

@@ -99,7 +99,7 @@ final class MinecraftLaunchExecutionCoordinator {
         guard markTerminationHandled(process) else { return }
 
         log("游戏进程已退出，退出代码：\(process.terminationStatus)")
-        if ![0, 9, 15, 128 + 9, 128 + 15].contains(process.terminationStatus) {
+        if ![0, 9, 15, 128 + 9, 128 + 15].contains(Int(process.terminationStatus)) {
             log("游戏非正常退出")
             DispatchQueue.main.async {
                 onCrash()

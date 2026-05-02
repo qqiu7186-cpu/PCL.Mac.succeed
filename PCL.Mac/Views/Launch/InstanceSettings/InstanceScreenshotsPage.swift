@@ -5,6 +5,7 @@ import AppKit
 private struct ScreenshotItem: Identifiable {
     let id: URL
     let url: URL
+    let modifiedAt: Date?
 
     var name: String { url.lastPathComponent }
 }
@@ -14,7 +15,14 @@ struct InstanceScreenshotsPage: View {
     @State private var instance: MinecraftInstance?
     @State private var screenshots: [ScreenshotItem] = []
 
-    private let columns: [GridItem] = Array(repeating: .init(.flexible(), spacing: 12), count: 4)
+    private let cardsPerRow: Int = 4
+    private let supportedImageExtensions: Set<String> = ["png", "jpg", "jpeg", "bmp", "tiff", "webp", "gif", "heic", "heif"]
+
+    private var screenshotRows: [[ScreenshotItem]] {
+        stride(from: 0, to: screenshots.count, by: cardsPerRow).map { start in
+            Array(screenshots[start..<min(start + cardsPerRow, screenshots.count)])
+        }
+    }
 
     var body: some View {
         InstanceSettingsBackground {
@@ -28,11 +36,6 @@ struct InstanceScreenshotsPage: View {
                         primaryAction: { openScreenshotsFolder(instance) },
                         secondaryAction: nil
                     )
-                    .overlay(alignment: .bottomTrailing) {
-                        InstanceSettingsFloatingActionButton(systemImage: "power") {
-                            openScreenshotsFolder(instance)
-                        }
-                    }
                 } else {
                     ScrollView {
                         VStack(spacing: 12) {
@@ -45,22 +48,30 @@ struct InstanceScreenshotsPage: View {
                                 .frame(height: 35)
                             }
 
-                            LazyVGrid(columns: columns, spacing: 12) {
-                                ForEach(screenshots) { item in
-                                    ScreenshotCard(item: item, onDelete: {
-                                        delete(item)
-                                    })
+                            InstanceSettingsSectionCard("截图列表（\(screenshots.count)）") {
+                                VStack(spacing: 12) {
+                                    ForEach(Array(screenshotRows.enumerated()), id: \.offset) { _, row in
+                                        HStack(alignment: .top, spacing: 12) {
+                                            ForEach(row) { item in
+                                                ScreenshotCard(item: item, onDelete: {
+                                                    delete(item)
+                                                })
+                                                .frame(maxWidth: .infinity)
+                                            }
+                                            if row.count < cardsPerRow {
+                                                ForEach(0..<(cardsPerRow - row.count), id: \.self) { _ in
+                                                    Color.clear
+                                                        .frame(maxWidth: .infinity)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         .padding(.bottom, 28)
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        InstanceSettingsFloatingActionButton(systemImage: "power") {
-                            openScreenshotsFolder(instance)
-                        }
                     }
                 }
             } else {
@@ -71,19 +82,36 @@ struct InstanceScreenshotsPage: View {
             instance = InstancePageLoader.loadInstance(id)
             reloadScreenshots()
         }
+        .onAppear {
+            reloadScreenshots()
+        }
     }
 
     private func reloadScreenshots() {
         guard let instance else { return }
-        let screenshotsURL = instance.runningDirectory.appending(path: "screenshots")
+        let screenshotsURL = effectiveGameDirectory(for: instance).appending(path: "screenshots")
+        InstanceFileBrowserService.ensureDirectoryExists(screenshotsURL)
         let files = InstanceFileBrowserService.resourceFileEntries(at: screenshotsURL)
         screenshots = files
-            .filter { ["png", "jpg", "jpeg", "bmp", "tiff", "webp"].contains($0.url.pathExtension.lowercased()) }
-            .map { ScreenshotItem(id: $0.url, url: $0.url) }
+            .filter { supportedImageExtensions.contains($0.url.pathExtension.lowercased()) }
+            .sorted { lhs, rhs in
+                switch (lhs.modifiedAt, rhs.modifiedAt) {
+                case let (lhsDate?, rhsDate?):
+                    if lhsDate != rhsDate { return lhsDate > rhsDate }
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                case (nil, nil):
+                    break
+                }
+                return lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+            }
+            .map { ScreenshotItem(id: $0.url, url: $0.url, modifiedAt: $0.modifiedAt) }
     }
 
     private func openScreenshotsFolder(_ instance: MinecraftInstance) {
-        let url = instance.runningDirectory.appending(path: "screenshots")
+        let url = effectiveGameDirectory(for: instance).appending(path: "screenshots")
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             NSWorkspace.shared.open(url)
@@ -101,6 +129,13 @@ struct InstanceScreenshotsPage: View {
             hint("删除失败：\(error.localizedDescription)", type: .critical)
         }
     }
+
+    private func effectiveGameDirectory(for instance: MinecraftInstance) -> URL {
+        if instance.config.versionIsolationEnabled {
+            return instance.runningDirectory
+        }
+        return InstanceManager.shared.currentRepository?.url ?? instance.runningDirectory
+    }
 }
 
 private struct ScreenshotCard: View {
@@ -114,9 +149,19 @@ private struct ScreenshotCard: View {
                     url: item.url,
                     size: .init(width: 190, height: 108),
                     cornerRadius: 4,
-                    fallbackIcon: "IconPicture"
+                    fallbackIcon: "iconPicture"
                 )
                 .frame(maxWidth: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    Text(item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? item.name)
+                        .font(.custom("PCLEnglish", size: 10))
+                        .foregroundStyle(Color.color1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.white.opacity(0.92))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .padding(6)
+                }
 
                 HStack(spacing: 10) {
                     smallAction("folder", "打开") {
@@ -126,13 +171,16 @@ private struct ScreenshotCard: View {
                         onDelete()
                     }
                     smallAction("doc.on.doc", "复制") {
-                        NSPasteboard.general.writeObjects([item.url as NSURL])
+                        copyImageToPasteboard()
                     }
                 }
-                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.78))
             }
             .frame(maxWidth: .infinity)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 
     private func smallAction(_ systemImage: String, _ title: String, action: @escaping () -> Void) -> some View {
@@ -146,5 +194,15 @@ private struct ScreenshotCard: View {
             .foregroundStyle(Color.color1)
         }
         .buttonStyle(.plain)
+    }
+
+    private func copyImageToPasteboard() {
+        guard let image = NSImage(contentsOf: item.url) else {
+            hint("复制截图失败：无法读取图片", type: .critical)
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
+        hint("已复制截图到剪贴板", type: .finish)
     }
 }

@@ -60,6 +60,8 @@ enum MinecraftLaunchPreparationService {
         model.options.manifest = model.manifest
         try model.options.validate()
 
+        _ = MinecraftWindowTitleOverrideService.preparePermissionIfNeeded(for: model.options.customWindowTitle)
+
         if skipLaunchPrecheck {
             log("已临时跳过启动前预检查")
             return

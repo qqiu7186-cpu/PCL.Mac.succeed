@@ -73,6 +73,10 @@ actor RemoteImageService {
     private func isAllowedHost(_ host: String) -> Bool {
         host == "modrinth.com" ||
         host.hasSuffix(".modrinth.com") ||
+        host == "forgecdn.net" ||
+        host.hasSuffix(".forgecdn.net") ||
+        host == "curseforge.com" ||
+        host.hasSuffix(".curseforge.com") ||
         host == "cylorine.studio" ||
         host.hasSuffix(".cylorine.studio")
     }

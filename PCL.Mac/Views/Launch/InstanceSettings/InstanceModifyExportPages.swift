@@ -19,7 +19,7 @@ struct InstanceModifyPage: View {
                     subtitle: "\(instance.version.description)\(instance.modLoader.map { "，已附加安装 \($0.description)" } ?? "")"
                 )
 
-                modifyRow(title: "Minecraft", value: instance.version.description, icon: "GrassBlock", actionTitle: "修改") {
+                modifyRow(title: "Minecraft", value: instance.version.description, icon: "iconGrassBlock", actionTitle: "修改") {
                     AppRouter.shared.setRoot(.download)
                     AppRouter.shared.activeModifyContext = modifyContext
                     AppRouter.shared.append(.minecraftDownload)

@@ -225,15 +225,144 @@ public class ForgeInstallService {
     private func executeProcessor(_ processor: ForgeInstallProfile.Processor) throws {
         let classpath: String = (processor.classpath + [processor.jar]).map(parseMavenCoord(coord:)).joined(separator: ":")
         let mainClass: String = try JarUtils.mainClass(of: librariesURL.appending(path: MavenCoordinateUtils.path(of: processor.jar)))
-        let arguments: [String] = ["-cp", classpath, mainClass] + processor.args.map { Utils.replace(parseValue($0), withValues: values, withDollarPrefix: false) }
+        let javaArguments: [String] = ["-cp", classpath, mainClass] + processor.args.map { Utils.replace(parseValue($0), withValues: values, withDollarPrefix: false) }
         let process: Process = .init()
-        process.arguments = arguments
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/java")
+        let outputPipe: Pipe = .init()
+        let outputLock: NSLock = .init()
+        var outputData: Data = .init()
+        let javaCommand = try selectJavaCommand()
+        process.arguments = javaCommand.arguments + javaArguments
+        process.executableURL = javaCommand.executableURL
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            outputLock.lock()
+            outputData.append(chunk)
+            outputLock.unlock()
+        }
         try process.run()
-        process.waitUntilExit()
+        let startTime = Date()
+        while process.isRunning {
+            if Date().timeIntervalSince(startTime) > 180 {
+                outputPipe.fileHandleForReading.readabilityHandler = nil
+                process.terminate()
+                throw SimpleError("Forge 安装器 \(processor.jar) 执行超时。")
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        let trailingData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        if !trailingData.isEmpty {
+            outputLock.lock()
+            outputData.append(trailingData)
+            outputLock.unlock()
+        }
         if process.terminationStatus != 0 {
+            outputLock.lock()
+            let output = String(decoding: outputData, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            outputLock.unlock()
+            if !output.isEmpty {
+                err("Forge 处理器执行失败输出：\n\(output)")
+                throw SimpleError("Forge 安装器 \(processor.jar) 执行失败。\(output)")
+            }
             throw SimpleError("Forge 安装器 \(processor.jar) 执行失败。")
         }
+    }
+
+    private func selectJavaCommand() throws -> JavaCommand {
+        let javaRange = manifest.supportedJavaMajorRange(
+            for: minecraftVersion,
+            modLoader: self is NeoforgeInstallService ? .neoforge : .forge,
+            modLoaderVersion: version
+        )
+        let runtimes = try? JavaManager.shared.allJavaRuntimes()
+        let prefersX64 = shouldPreferX64RuntimeForForge()
+        let matchingRuntime = runtimes?
+            .filter { javaRange.contains($0.majorVersion) }
+            .sorted { compareJavaRuntime(lhs: $0, rhs: $1, prefersX64: prefersX64) }
+            .first
+
+        if let matchingRuntime {
+            let shouldForceX64 = prefersX64 && runtimeCanRunUnderRosetta(matchingRuntime)
+            let command = javaCommand(for: matchingRuntime, forceX64: shouldForceX64)
+            log("Forge 安装器使用 Java：\(matchingRuntime.executableURL.path) (\(matchingRuntime.version))\(shouldForceX64 ? " [x64/Rosetta]" : "")")
+            return command
+        }
+
+        let fallback = URL(fileURLWithPath: "/usr/bin/java")
+        if FileManager.default.isExecutableFile(atPath: fallback.path) {
+            warn("未找到符合要求的 Java 运行时，Forge 安装器回退到系统 Java：\(fallback.path)。需要版本范围：\(javaRange.lowerBound)-\(javaRange.upperBound)")
+            return .init(executableURL: fallback, arguments: [])
+        }
+
+        throw SimpleError("未找到可用的 Java 运行时。Forge 安装需要 Java \(javaRange.lowerBound)-\(javaRange.upperBound)。")
+    }
+
+    private func compareJavaRuntime(lhs: JavaRuntime, rhs: JavaRuntime, prefersX64: Bool) -> Bool {
+        let requiredMajor = manifest.requiredJavaMajorVersion(for: minecraftVersion)
+        if prefersX64 {
+            let lhsPreferred = runtimeCanRunUnderRosetta(lhs)
+            let rhsPreferred = runtimeCanRunUnderRosetta(rhs)
+            if lhsPreferred != rhsPreferred {
+                return lhsPreferred
+            }
+        }
+        let lhsDistance = abs(lhs.majorVersion - requiredMajor)
+        let rhsDistance = abs(rhs.majorVersion - requiredMajor)
+        if lhsDistance != rhsDistance {
+            return lhsDistance < rhsDistance
+        }
+        if lhs.type != rhs.type {
+            return lhs.type == .jdk
+        }
+        if lhs.releaseType != rhs.releaseType {
+            switch (lhs.releaseType, rhs.releaseType) {
+            case (.stableLTS, _), (.stable, .earlyAccess), (.stable, .unknown), (.unknown, .earlyAccess):
+                return true
+            default:
+                return false
+            }
+        }
+        return lhs.majorVersion < rhs.majorVersion
+    }
+
+    private func shouldPreferX64RuntimeForForge() -> Bool {
+        Architecture.systemArchitecture() == .arm64 && minecraftVersion >= .init("1.21") && supportsX64JavaFallback()
+    }
+
+    private func runtimeCanRunUnderRosetta(_ runtime: JavaRuntime) -> Bool {
+        runtime.architecture == .x64 || runtime.architecture == .fatFile
+    }
+
+    private func javaCommand(for runtime: JavaRuntime, forceX64: Bool) -> JavaCommand {
+        guard forceX64 else {
+            return .init(executableURL: runtime.executableURL, arguments: [])
+        }
+        return .init(
+            executableURL: URL(fileURLWithPath: "/usr/bin/arch"),
+            arguments: ["-x86_64", runtime.executableURL.path]
+        )
+    }
+
+    private func supportsX64JavaFallback() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/arch")
+        process.arguments = ["-x86_64", "/usr/bin/true"]
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private struct JavaCommand {
+        let executableURL: URL
+        let arguments: [String]
     }
     
     private func downloadMojmaps(to destination: URL) async throws {

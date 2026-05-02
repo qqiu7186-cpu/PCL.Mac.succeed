@@ -102,6 +102,13 @@ enum InstancePageActionService {
         options.skipResourceValidation = instance.config.disableResourceValidation
         options.enableLog4jDebug = instance.config.enableLog4jDebug
         options.autoJoinServer = LaunchOptions.parseAutoJoinServer(instance.config.autoJoinServer)
+        if let autoJoinServer = options.autoJoinServer {
+            options.quickPlayPath = "quickPlay/log.json"
+            options.quickPlayMultiplayer = autoJoinServer.port.map { "\(autoJoinServer.host):\($0)" } ?? autoJoinServer.host
+        } else {
+            options.quickPlayPath = nil
+            options.quickPlayMultiplayer = nil
+        }
     }
 
     private static func shellEscape(_ value: String) -> String {

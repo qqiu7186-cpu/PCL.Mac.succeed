@@ -6,28 +6,48 @@ struct InstanceOverviewPage: View {
     let id: String
     @State private var instance: MinecraftInstance?
     @State private var localDesc: String = ""
-    @State private var isFavorite: Bool = false
+    @State private var category: InstanceMetadataService.Category = .normal
+    @State private var customIcon: ImageResource?
+    @State private var folderSizeText: String = "计算中"
 
     var body: some View {
         InstanceSettingsScrollPage {
             if let instance {
-                InstanceSettingsHeaderCard(instance: instance, subtitle: instance.version.description)
+                InstanceSettingsHeaderCard(instance: instance, subtitle: instance.version.description, iconOverride: customIcon)
 
                 InstanceSettingsSectionCard("实例信息") {
-                    HStack(spacing: 28) {
-                        infoItem(icon: .iconBlock, title: "启动次数", value: "暂无记录")
-                        infoItem(icon: instance.modLoader?.icon ?? .iconGrassBlock, title: instance.modLoader?.description ?? "Minecraft", value: instance.version.description)
-                        Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 28) {
+                            infoItem(icon: .iconBlock, title: "实例大小", value: folderSizeText)
+                            infoItem(icon: .iconJava, title: "游戏内存", value: memoryDescription(for: instance))
+                            infoItem(icon: customIcon ?? instance.modLoader?.icon ?? .iconGrassBlock, title: category.rawValue, value: instance.version.description)
+                            Spacer(minLength: 0)
+                        }
+                        HStack(spacing: 28) {
+                            infoItem(icon: .iconAbout, title: "启动次数", value: "\(InstanceMetadataService.launchCount(for: id)) 次")
+                            infoItem(icon: .iconSettingsPage, title: "版本隔离", value: instance.config.versionIsolationEnabled ? "开启" : "关闭")
+                            infoItem(icon: .iconJava, title: "Java 选择", value: javaDescription(for: instance))
+                            Spacer(minLength: 0)
+                        }
                     }
                 }
 
                 InstanceSettingsSectionCard("个性化") {
                     VStack(alignment: .leading, spacing: 12) {
                         InstanceSettingsFieldRow("图标") {
-                            InstanceSettingsInputBox(text: "自动", showsChevron: true)
+                            Button { chooseIcon() } label: {
+                                InstanceSettingsInputBox(text: iconDescription, showsChevron: true)
+                            }
+                            .buttonStyle(.plain)
                         }
                         InstanceSettingsFieldRow("分类") {
-                            InstanceSettingsInputBox(text: isFavorite ? "收藏夹" : "自动", showsChevron: true)
+                            Button { chooseCategory() } label: {
+                                InstanceSettingsInputBox(text: category.rawValue, showsChevron: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        InstanceSettingsFieldRow("实例描述") {
+                            InstanceSettingsInputBox(text: localDesc.isEmpty ? "未设置" : localDesc, placeholder: localDesc.isEmpty)
                         }
                         HStack(spacing: 16) {
                             MyButton("修改实例名") {
@@ -38,9 +58,9 @@ struct InstanceOverviewPage: View {
                                 editDescription()
                             }
                             .frame(width: 112)
-                            MyButton(isFavorite ? "取消收藏夹" : "加入收藏夹") {
-                                isFavorite.toggle()
-                                InstanceMetadataService.setFavorite(isFavorite, for: id)
+                            MyButton(category == .favorite ? "取消收藏夹" : "加入收藏夹") {
+                                category = category == .favorite ? .normal : .favorite
+                                InstanceMetadataService.setCategory(category, for: id)
                             }
                             .frame(width: 112)
                             Spacer(minLength: 0)
@@ -86,7 +106,11 @@ struct InstanceOverviewPage: View {
         .task(id: id) {
             instance = InstancePageLoader.loadInstance(id)
             localDesc = InstanceMetadataService.description(for: id)
-            isFavorite = InstanceMetadataService.isFavorite(instanceID: id)
+            category = InstanceMetadataService.category(for: id)
+            customIcon = InstanceMetadataService.icon(for: id)
+            if let instance {
+                folderSizeText = InstancePageLoader.fileSizeString(InstancePageLoader.folderSize(at: instance.runningDirectory))
+            }
         }
     }
 
@@ -96,6 +120,7 @@ struct InstanceOverviewPage: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 24, height: 24)
+                .foregroundStyle(Color.black)
             VStack(alignment: .leading, spacing: 2) {
                 MyText(title, size: 12, color: .colorGray2)
                 MyText(value, size: 12)
@@ -106,6 +131,59 @@ struct InstanceOverviewPage: View {
     private func quickButton(_ title: String, action: @escaping () -> Void) -> some View {
         MyButton(title) { action() }
             .frame(width: 112)
+    }
+
+    private func memoryDescription(for instance: MinecraftInstance) -> String {
+        switch instance.config.memoryMode {
+        case .custom:
+            "自定义 \(instance.config.requestedMemoryMB) MB"
+        case .global:
+            "跟随全局（\(instance.config.requestedMemoryMB) MB）"
+        case .auto:
+            "自动（\(instance.config.requestedMemoryMB) MB）"
+        }
+    }
+
+    private func javaDescription(for instance: MinecraftInstance) -> String {
+        if instance.config.autoSelectJava {
+            return instance.previewResolvedJavaForLaunch()?.version ?? "自动（未找到可用 Java）"
+        }
+        return instance.javaRuntime()?.version ?? "手动（无）"
+    }
+
+    private var iconDescription: String {
+        guard let customIcon else { return "跟随版本/加载器" }
+        return InstanceMetadataService.iconOptions.first(where: { $0.resource == customIcon })?.name ?? "自定义图标"
+    }
+
+    private func chooseIcon() {
+        let items = [ListItem(name: "跟随版本/加载器", description: "使用当前实例默认图标")] +
+        InstanceMetadataService.iconOptions.map { option in
+            ListItem(image: option.resource, imageSize: 28, name: option.name, description: option.id)
+        }
+        MessageBoxManager.shared.showList(title: "选择实例图标", items: items) { index in
+            guard let index else { return }
+            if index == 0 {
+                customIcon = nil
+                InstanceMetadataService.setIcon(nil, for: id)
+                return
+            }
+            let option = InstanceMetadataService.iconOptions[index - 1]
+            customIcon = option.resource
+            InstanceMetadataService.setIcon(option.resource, for: id)
+        }
+    }
+
+    private func chooseCategory() {
+        let items = InstanceMetadataService.Category.allCases.map { category in
+            ListItem(image: category == .favorite ? .iconFavoriteFilled : .iconBlock, imageSize: 28, name: category.rawValue, description: category == .favorite ? "会加入收藏夹分类" : "保持为普通实例")
+        }
+        MessageBoxManager.shared.showList(title: "选择实例分类", items: items) { index in
+            guard let index else { return }
+            let selected = InstanceMetadataService.Category.allCases[index]
+            category = selected
+            InstanceMetadataService.setCategory(selected, for: id)
+        }
     }
 
     private func rename(_ instance: MinecraftInstance) {

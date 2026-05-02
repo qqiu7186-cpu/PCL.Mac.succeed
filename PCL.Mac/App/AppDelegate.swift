@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = AppWindow()
         self.window.makeKeyAndOrderFront(nil)
         log("成功创建窗口")
+        MinecraftWindowTitleOverrideService.preparePermissionOnLauncherStartup()
         addEscapeMonitor()
         
         if !LauncherConfig.shared.hasEnteredLauncher {

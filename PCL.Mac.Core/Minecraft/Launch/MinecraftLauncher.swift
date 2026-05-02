@@ -52,7 +52,9 @@ public class MinecraftLauncher {
             "xuid": "",
             "user_type": options.userType,
             "version_type": "PCL.Mac",
-            "user_properties": options.userProperties
+            "user_properties": options.userProperties,
+            "quickPlayPath": options.quickPlayPath ?? "",
+            "quickPlayMultiplayer": options.quickPlayMultiplayer ?? ""
         ]
     }
     
@@ -114,7 +116,11 @@ public class MinecraftLauncher {
         arguments.append(contentsOf: manifest.jvmArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
 
         if let customWindowTitle = options.customWindowTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !customWindowTitle.isEmpty {
-            arguments.insert("-Xdock:name=\(customWindowTitle)", at: 0)
+            arguments.insert(contentsOf: [
+                "-Xdock:name=\(customWindowTitle)",
+                "-Dapple.awt.application.name=\(customWindowTitle)",
+                "-Dcom.apple.mrj.application.apple.menu.about.name=\(customWindowTitle)"
+            ], at: 0)
         }
         if options.enableLog4jDebug {
             arguments.insert("-Dlog4j2.debug=true", at: 0)
@@ -123,9 +129,11 @@ public class MinecraftLauncher {
             arguments.insert(contentsOf: options.additionalJVMArguments, at: 0)
         }
 
+        logAutoJoinModeIfNeeded(manifest: manifest, options: options)
+
         arguments.append(manifest.mainClass)
         arguments.append(contentsOf: manifest.gameArguments.flatMap { $0.rules.allSatisfy { $0.test(with: options) } ? $0.value : [] })
-        if let autoJoinServer = options.autoJoinServer {
+        if let autoJoinServer = options.autoJoinServer, !supportsQuickPlayMultiplayer(manifest: manifest, options: options) {
             arguments.append(contentsOf: ["--server", autoJoinServer.host])
             if let port = autoJoinServer.port {
                 arguments.append(contentsOf: ["--port", String(port)])
@@ -317,6 +325,24 @@ public class MinecraftLauncher {
         }
 
         return result
+    }
+
+    private static func supportsQuickPlayMultiplayer(manifest: ClientManifest, options: LaunchOptions) -> Bool {
+        guard options.quickPlayMultiplayer != nil else { return false }
+        return manifest.gameArguments.contains { argument in
+            argument.value.contains("${quickPlayMultiplayer}") || argument.value.contains("${quickPlayPath}")
+        }
+    }
+
+    private static func logAutoJoinModeIfNeeded(manifest: ClientManifest, options: LaunchOptions) {
+        guard let autoJoinServer = options.autoJoinServer else { return }
+
+        let endpoint = autoJoinServer.port.map { "\(autoJoinServer.host):\($0)" } ?? autoJoinServer.host
+        if supportsQuickPlayMultiplayer(manifest: manifest, options: options) {
+            log("自动进入服务器：使用 Quick Play 模式，目标=\(endpoint)，quickPlayPath=\(options.quickPlayPath ?? "<nil>")")
+        } else {
+            log("自动进入服务器：使用传统参数模式，目标=\(endpoint)")
+        }
     }
 
     private static func sanitizeJVMArguments(_ arguments: [String], options: LaunchOptions) -> [String] {

@@ -140,6 +140,42 @@ struct AppArchitectureTests {
         #expect(executor.executedTaskNames[0].contains("Java"))
         #expect(navigator.showTasksCallCount == 1)
     }
+
+    @Test func instancePageActionServiceAppliesVersionIsolationAndWindowTitleOverrides() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let instanceDirectory = root.appending(path: "Test Instance")
+        let repositoryURL = root.appending(path: "repository")
+        try FileManager.default.createDirectory(at: instanceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repositoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let manifestJSON = #"{"arguments":{"game":[],"jvm":[]},"assetIndex":{"id":"1","sha1":"x","size":1,"totalSize":1,"url":"https://example.com/index.json"},"downloads":{"client":{"sha1":"x","size":1,"url":"https://example.com/client.jar"}},"id":"1.21.1","javaVersion":{"component":"java-runtime-gamma","majorVersion":21},"libraries":[],"mainClass":"net.minecraft.client.main.Main","type":"release"}"#
+        let manifest = try JSONDecoder.shared.decode(ClientManifest.self, from: Data(manifestJSON.utf8))
+        let config = MinecraftInstance.Config()
+        config.versionIsolationEnabled = false
+        config.windowTitle = "自定义标题"
+        config.gameArguments = "--fullscreen"
+
+        let instance = MinecraftInstance(
+            runningDirectory: instanceDirectory,
+            version: .init("1.21.1"),
+            manifest: manifest,
+            config: config,
+            modLoader: nil,
+            modLoaderVersion: nil
+        )
+        let repository = MinecraftRepository(name: "测试仓库", url: repositoryURL)
+        var options = LaunchOptions()
+        options.repository = repository
+        options.runningDirectory = instanceDirectory
+
+        InstancePageActionService.applyInstanceSettings(instance: instance, to: &options)
+
+        #expect(options.instanceDirectory == instanceDirectory)
+        #expect(options.runningDirectory == repositoryURL)
+        #expect(options.customWindowTitle == "自定义标题")
+        #expect(options.additionalGameArguments == ["--fullscreen"])
+    }
 }
 
 private struct FakeDiagnosticsSnapshotProvider: DiagnosticsSnapshotProviding {

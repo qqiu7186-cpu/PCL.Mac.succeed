@@ -66,6 +66,8 @@ public struct LaunchOptions {
     public var skipResourceValidation: Bool = false
     public var enableLog4jDebug: Bool = false
     public var autoJoinServer: AutoJoinServer?
+    public var quickPlayPath: String?
+    public var quickPlayMultiplayer: String?
     
     // Authlib Injector
     public var authlibInjectorPath: String?

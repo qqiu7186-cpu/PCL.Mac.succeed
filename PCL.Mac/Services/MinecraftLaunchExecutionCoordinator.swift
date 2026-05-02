@@ -37,6 +37,9 @@ final class MinecraftLaunchExecutionCoordinator {
         onCrash: @escaping () -> Void
     ) {
         gameProcess = process
+        if let customWindowTitle = options.customWindowTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !customWindowTitle.isEmpty {
+            MinecraftWindowTitleOverrideService.enforceTitle(for: process, title: customWindowTitle)
+        }
         process.terminationHandler = { [weak self] process in
             self?.handleProcessTermination(process, instance: instance, options: options, logURL: logURL, onCancellation: onCancellation, onCrash: onCrash)
         }

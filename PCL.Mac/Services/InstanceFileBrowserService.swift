@@ -31,12 +31,12 @@ enum InstanceFileBrowserService {
         return total
     }
 
-    static func saveDirectoryURLs(at url: URL) -> [(url: URL, modifiedAt: Date?)] {
-        listDirectory(at: url, including: [.isDirectoryKey, .contentModificationDateKey])
+    static func saveDirectoryURLs(at url: URL) -> [(url: URL, createdAt: Date?, modifiedAt: Date?)] {
+        listDirectory(at: url, including: [.isDirectoryKey, .creationDateKey, .contentModificationDateKey])
             .compactMap { itemURL in
-                let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+                let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .creationDateKey, .contentModificationDateKey])
                 guard values?.isDirectory == true else { return nil }
-                return (itemURL, values?.contentModificationDate)
+                return (itemURL, values?.creationDate, values?.contentModificationDate)
             }
     }
 

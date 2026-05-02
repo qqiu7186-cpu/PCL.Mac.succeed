@@ -194,10 +194,10 @@ struct FavoritesDownloadPage: View {
 
     private func iconName(for type: ModrinthProjectType) -> String {
         switch type {
-        case .mod: "IconMod"
-        case .modpack: "IconBox"
-        case .resourcepack: "IconPicture"
-        case .shader: "IconSun"
+        case .mod: "iconMod"
+        case .modpack: "iconBox"
+        case .resourcepack: "iconPicture"
+        case .shader: "iconSun"
         }
     }
 }

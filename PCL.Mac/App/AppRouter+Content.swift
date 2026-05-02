@@ -94,7 +94,8 @@ extension AppRouter {
                 hideListCountWhenEmpty: true,
                 emptyDownloadButtonText: "下载资源包",
                 primaryButtonWidth: 130,
-                listActionButtonWidth: 100
+                listActionButtonWidth: 100,
+                remoteProjectType: .resourcepack
             )
         case .instanceShaderpacks(let id):
             InstanceFolderResourcePage(
@@ -111,19 +112,11 @@ extension AppRouter {
                 hideListCountWhenEmpty: true,
                 emptyDownloadButtonText: "下载光影包",
                 primaryButtonWidth: 130,
-                listActionButtonWidth: 100
+                listActionButtonWidth: 100,
+                remoteProjectType: .shader
             )
         case .instanceSchematics(let id):
-            InstanceFolderResourcePage(
-                id: id,
-                title: "投影原理图",
-                folderName: "schematics",
-                allowedTypes: [.data, .zip],
-                quickOpenButtonText: "打开投影原理图文件夹",
-                importButtonText: "从文件安装",
-                emptyTitle: "该实例暂时没有投影原理图",
-                emptyDescription: "如需使用投影，请先安装相关 Mod 并启动一次游戏。"
-            )
+            InstanceSchematicsPage(id: id)
         case .instanceServers(let id):
             InstanceServersPage(id: id)
         default:

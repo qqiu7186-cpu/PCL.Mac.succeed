@@ -40,6 +40,7 @@ class MinecraftLaunchManager: ObservableObject {
         in repository: MinecraftRepository
     ) -> Bool {
         if isLaunching { return false }
+        InstanceMetadataService.incrementLaunchCount(for: instance.name)
         self.loadingModel.text = "正在启动游戏"
         let task: MyTask<MinecraftLaunchTask.Model> = MinecraftLaunchTask.create(for: instance, using: account, in: repository) { launcher, process in
             self.coordinator.attachProcess(process, instance: instance, options: launcher.options, logURL: launcher.logURL, onCancellation: { [weak self] in

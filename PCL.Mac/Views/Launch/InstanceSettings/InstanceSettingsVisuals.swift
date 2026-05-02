@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Core
+import UniformTypeIdentifiers
 
 struct InstanceSettingsBackground<Content: View>: View {
     private let content: Content
@@ -45,11 +46,12 @@ struct InstanceSettingsScrollPage<Content: View>: View {
 struct InstanceSettingsHeaderCard: View {
     let instance: MinecraftInstance
     let subtitle: String?
+    var iconOverride: ImageResource? = nil
 
     var body: some View {
         MyCard("", foldable: false, titled: false, padding: 14) {
             HStack(spacing: 10) {
-                Image(instance.modLoader?.icon ?? .iconGrassBlock)
+                Image(iconOverride ?? instance.modLoader?.icon ?? .iconGrassBlock)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 26, height: 26)
@@ -255,10 +257,39 @@ struct InstanceSettingsEmptyStateCard: View {
     let description: String
     let primaryTitle: String
     let secondaryTitle: String?
+    let tertiaryTitle: String?
     let primaryAction: () -> Void
     let secondaryAction: (() -> Void)?
+    let tertiaryAction: (() -> Void)?
+
+    init(
+        title: String,
+        description: String,
+        primaryTitle: String,
+        secondaryTitle: String? = nil,
+        tertiaryTitle: String? = nil,
+        primaryAction: @escaping () -> Void,
+        secondaryAction: (() -> Void)? = nil,
+        tertiaryAction: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.description = description
+        self.primaryTitle = primaryTitle
+        self.secondaryTitle = secondaryTitle
+        self.tertiaryTitle = tertiaryTitle
+        self.primaryAction = primaryAction
+        self.secondaryAction = secondaryAction
+        self.tertiaryAction = tertiaryAction
+    }
 
     var body: some View {
+        let actionItems: [(String, () -> Void)] = [
+            (primaryTitle, primaryAction),
+            secondaryTitle.flatMap { title in secondaryAction.map { (title, $0) } },
+            tertiaryTitle.flatMap { title in tertiaryAction.map { (title, $0) } }
+        ].compactMap { $0 }
+        let usesLongActionTitle = actionItems.contains { $0.0.count >= 6 }
+
         VStack {
             Spacer()
             MyCard("", foldable: false, titled: false, padding: 18) {
@@ -270,22 +301,197 @@ struct InstanceSettingsEmptyStateCard: View {
                             .frame(height: 2)
                         MyText(description, size: 12, color: .colorGray2)
                             .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     HStack(spacing: 14) {
-                        MyButton(primaryTitle) { primaryAction() }
-                            .frame(width: 112)
-                        if let secondaryTitle, let secondaryAction {
-                            MyButton(secondaryTitle) { secondaryAction() }
-                                .frame(width: 112)
+                        ForEach(Array(actionItems.enumerated()), id: \.offset) { entry in
+                            MyButton(entry.element.0) { entry.element.1() }
+                                .frame(width: actionButtonWidth(count: actionItems.count, usesLongActionTitle: usesLongActionTitle))
                         }
                     }
                     .frame(height: 35)
                 }
-                .frame(width: 280)
+                .frame(width: cardWidth(count: actionItems.count, usesLongActionTitle: usesLongActionTitle))
             }
             Spacer()
         }
+    }
+
+    private func cardWidth(count: Int, usesLongActionTitle: Bool) -> CGFloat {
+        switch count {
+        case 3: usesLongActionTitle ? 500 : 420
+        case 2: usesLongActionTitle ? 420 : 400
+        default: 360
+        }
+    }
+
+    private func actionButtonWidth(count: Int, usesLongActionTitle: Bool) -> CGFloat {
+        if count >= 3 {
+            return usesLongActionTitle ? 136 : 112
+        }
+        return usesLongActionTitle ? 140 : 120
+    }
+}
+
+struct InstanceSettingsSearchBar: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(.iconSearch)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 15, height: 15)
+                .foregroundStyle(Color.color1)
+
+            ZStack(alignment: .leading) {
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.custom("PCLEnglish", size: 14))
+                    .foregroundStyle(Color.color1)
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(.custom("PCLEnglish", size: 14))
+                        .foregroundStyle(Color.colorGray3)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(Color.white.opacity(0.82))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.color6, lineWidth: 1))
+        )
+    }
+}
+
+struct InstanceSettingsCountBadge: View {
+    let text: String
+
+    var body: some View {
+        MyText(text, size: 12, color: .white)
+            .padding(.horizontal, 12)
+            .frame(height: 24)
+            .background(
+                Capsule()
+                    .fill(Color.color3)
+            )
+    }
+}
+
+struct InstanceSettingsSortChip<Label: StringProtocol>: View {
+    let label: Label
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.color1)
+            MyText("排序：\(label)", size: 12, color: .color1)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(Color.white.opacity(0.82))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.color6, lineWidth: 1))
+        )
+    }
+}
+
+struct InstanceSettingsFileIcon: View {
+    let url: URL
+    let size: CGSize
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        Image(nsImage: fileIcon)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: size.width, height: size.height)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color.white.opacity(0.72))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    private var fileIcon: NSImage {
+        let icon: NSImage
+        if FileManager.default.fileExists(atPath: url.path) {
+            icon = NSWorkspace.shared.icon(forFile: url.path)
+        } else {
+            let contentType = UTType(filenameExtension: url.pathExtension) ?? .data
+            icon = NSWorkspace.shared.icon(for: contentType)
+        }
+        icon.size = size
+        return icon
+    }
+}
+
+struct InstanceSettingsPreviewIcon: View {
+    let image: NSImage?
+    let remoteImageURL: URL?
+    let fileURL: URL
+    let size: CGSize
+    let cornerRadius: CGFloat
+    var fallbackImageResource: ImageResource? = nil
+
+    var body: some View {
+        Group {
+            if let remoteImageURL {
+                ZStack {
+                    placeholderContent
+                    NetworkImage(url: remoteImageURL, targetSize: size)
+                        .scaledToFill()
+                }
+            } else {
+                placeholderContent
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    @ViewBuilder
+    private var placeholderContent: some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+        } else if let fallbackImageResource {
+            Image(fallbackImageResource)
+                .resizable()
+                .scaledToFit()
+                .padding(6)
+                .foregroundStyle(Color.colorGray3)
+                .background(Color.white.opacity(0.72))
+        } else {
+            InstanceSettingsFileIcon(url: fileURL, size: size, cornerRadius: cornerRadius)
+        }
+    }
+}
+
+struct InstanceSettingsHoverActionButton: View {
+    let systemImage: String
+    let color: Color
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(color)
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 

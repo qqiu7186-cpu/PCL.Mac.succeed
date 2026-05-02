@@ -1,6 +1,7 @@
 import SwiftUI
 import Core
 import AppKit
+import Darwin
 
 struct InstanceConfigPage: View {
     @StateObject private var viewModel: InstanceConfigViewModel
@@ -18,19 +19,19 @@ struct InstanceConfigPage: View {
                 InstanceSettingsSectionCard("启动选项") {
                     VStack(alignment: .leading, spacing: 12) {
                         InstanceSettingsFieldRow("版本隔离") {
-                            Button {
-                                versionIsolationBinding.wrappedValue.toggle()
-                            } label: {
+                            Button(action: chooseVersionIsolationMode) {
                                 InstanceSettingsInputBox(text: viewModel.versionIsolationEnabled ? "开启" : "关闭", showsChevron: true)
                             }
                             .buttonStyle(.plain)
                         }
-                        InstanceSettingsFieldRow("游戏窗口标题") {
-                            advancedSingleLineField(text: windowTitleBinding, placeholder: viewModel.windowTitleFollowsGlobal ? "跟随全局设置" : instance.name)
+                        InstanceSettingsFieldRow("应用显示名称") {
+                            advancedSingleLineField(text: windowTitleBinding, placeholder: viewModel.windowTitleFollowsGlobal ? instance.name : "输入自定义窗口标题")
                                 .disabled(viewModel.windowTitleFollowsGlobal)
                                 .opacity(viewModel.windowTitleFollowsGlobal ? 0.65 : 1)
                         }
-                        InstanceSettingsCheckboxRow(title: "默认窗口标题", isOn: windowTitleFollowsBinding)
+                        InstanceSettingsCheckboxRow(title: "使用实例名作为窗口标题", isOn: windowTitleFollowsBinding)
+                        MyText("该选项会在下次启动时影响 macOS 中的应用 / Dock 显示名称。Minecraft 实际游戏窗口标题由游戏自身的 GLFW 窗口控制，启动器无法直接覆盖。", size: 11.5, color: .colorGray3)
+                            .padding(.leading, 112)
                         InstanceSettingsFieldRow("自定义信息") {
                             advancedSingleLineField(text: customInfoBinding, placeholder: "显示在概览页的实例备注")
                         }
@@ -72,17 +73,20 @@ struct InstanceConfigPage: View {
                                 Spacer()
                                 MyText("游戏分配", size: 11, color: .colorGray3)
                             }
-                            HStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.color3)
-                                    .frame(width: 160, height: 3)
-                                Rectangle()
-                                    .fill(Color.color5)
-                                    .frame(width: 130, height: 3)
-                                Rectangle()
-                                    .fill(Color.colorGray6)
-                                    .frame(maxWidth: .infinity, minHeight: 3, maxHeight: 3)
+                            GeometryReader { geometry in
+                                HStack(spacing: 0) {
+                                    Rectangle()
+                                        .fill(Color.color3)
+                                        .frame(width: geometry.size.width * systemUsedMemoryRatio, height: 3)
+                                    Rectangle()
+                                        .fill(Color.color5)
+                                        .frame(width: geometry.size.width * allocatedMemoryRatio, height: 3)
+                                    Rectangle()
+                                        .fill(Color.colorGray6)
+                                        .frame(width: geometry.size.width * freeMemoryRatio, height: 3)
+                                }
                             }
+                            .frame(height: 3)
                             HStack {
                                 MyText(usedMemoryText, size: 12)
                                 Spacer()
@@ -154,7 +158,7 @@ struct InstanceConfigPage: View {
     }
 
     private var usedMemoryText: String {
-        String(format: "%.1f GB / %.1f GB", effectiveAllocatedMemoryGB, totalMemoryGB)
+        String(format: "%.1f GB / %.1f GB", systemUsedMemoryGB + effectiveAllocatedMemoryGB, totalMemoryGB)
     }
 
     private var allocatedMemoryText: String {
@@ -170,6 +174,37 @@ struct InstanceConfigPage: View {
             heapMB = 4096
         }
         return min(heapMB / 1024, totalMemoryGB)
+    }
+
+    private var systemUsedMemoryGB: Double {
+        let pageSize = vm_kernel_page_size
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else {
+            return 0
+        }
+
+        let usedPages = UInt64(stats.active_count + stats.wire_count + stats.compressor_page_count)
+        let usedBytes = usedPages * UInt64(pageSize)
+        return min(Double(usedBytes) / 1024 / 1024 / 1024, totalMemoryGB)
+    }
+
+    private var systemUsedMemoryRatio: Double {
+        min(systemUsedMemoryGB / totalMemoryGB, 1)
+    }
+
+    private var allocatedMemoryRatio: Double {
+        let remaining = max(1 - systemUsedMemoryRatio, 0)
+        return min(effectiveAllocatedMemoryGB / totalMemoryGB, remaining)
+    }
+
+    private var freeMemoryRatio: Double {
+        max(1 - systemUsedMemoryRatio - allocatedMemoryRatio, 0)
     }
 
     private var heapSizeBinding: Binding<Double> {
@@ -194,6 +229,23 @@ struct InstanceConfigPage: View {
                 try viewModel.switchJava(to: runtimes[index])
             } catch {
                 hint("切换 Java 失败：\(error.localizedDescription)", type: .critical)
+            }
+        }
+    }
+
+    private func chooseVersionIsolationMode() {
+        let currentEnabled = viewModel.versionIsolationEnabled
+        MessageBoxManager.shared.showList(
+            title: "版本隔离",
+            items: [
+                .init(name: "开启", description: "存档、模组、配置等内容保存在当前实例目录中。"),
+                .init(name: "关闭", description: "运行目录改为游戏仓库，多个实例可共享运行时内容。")
+            ]
+        ) { index in
+            guard let index else { return }
+            let enabled = index == 0
+            if enabled != currentEnabled {
+                viewModel.setVersionIsolationEnabled(enabled)
             }
         }
     }

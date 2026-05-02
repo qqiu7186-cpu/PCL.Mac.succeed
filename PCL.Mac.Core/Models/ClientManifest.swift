@@ -425,13 +425,19 @@ public class ClientManifest: Decodable {
                 if name == "is_demo_user" && value != options.demo {
                     return !allow
                 }
-                if [
-                    "has_custom_resolution",
-                    "has_quick_plays_support",
-                    "is_quick_play_singleplayer",
-                    "is_quick_play_multiplayer",
-                    "is_quick_play_realms"
-                ].contains(name) && value { // not implemented
+                if name == "has_custom_resolution" && value {
+                    return !allow
+                }
+                if name == "has_quick_plays_support" && value != (options.quickPlayPath != nil) {
+                    return !allow
+                }
+                if name == "is_quick_play_singleplayer" && value {
+                    return !allow
+                }
+                if name == "is_quick_play_multiplayer" && value != (options.quickPlayMultiplayer != nil) {
+                    return !allow
+                }
+                if name == "is_quick_play_realms" && value {
                     return !allow
                 }
             }

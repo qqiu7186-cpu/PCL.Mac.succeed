@@ -14,9 +14,9 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   print "  RELEASE_NOTES_URL_PREFIX    发布说明 URL 前缀"
   print "  FULL_RELEASE_NOTES_URL      完整更新日志 URL"
   print "  PRODUCT_LINK                产品主页链接"
-  print "  CHANNEL                     Sparkle 通道，例如 beta"
+  print "  CHANNEL                     Sparkle 通道，例如 beta / beta-gray"
   print "  PHASED_ROLLOUT_INTERVAL     灰度放量间隔（秒）"
-  print "  SPARKLE_ACCOUNT_NAME        Sparkle 签名账号名"
+  print "  SPARKLE_ACCOUNT_NAME        Sparkle 签名账号名，默认使用 Bundle ID"
   exit 0
 fi
 
@@ -27,7 +27,7 @@ PRODUCT_LINK="${PRODUCT_LINK:-https://update.gzitvs.cn/projects/PCL.Mac.Refactor
 FULL_RELEASE_NOTES_URL="${FULL_RELEASE_NOTES_URL:-}"
 CHANNEL="${CHANNEL:-}"
 PHASED_ROLLOUT_INTERVAL="${PHASED_ROLLOUT_INTERVAL:-}"
-ACCOUNT_NAME="${SPARKLE_ACCOUNT_NAME:-org.ceciliastudio.pclmac}"
+ACCOUNT_NAME="${SPARKLE_ACCOUNT_NAME:-cn.gzitvs.PCL-Mac}"
 
 if [[ ! -x "${GENERATE_APPCAST}" ]]; then
   print "未找到 Sparkle 工具：${GENERATE_APPCAST}"
@@ -37,7 +37,7 @@ fi
 
 if [[ -z "${DOWNLOAD_URL_PREFIX}" ]]; then
   print "必须提供 DOWNLOAD_URL_PREFIX，例如："
-  print "  DOWNLOAD_URL_PREFIX=https://update.gzitvs.cn/meta/PCL.Mac/updates/ zsh scripts/publish-sparkle-feed.sh dist/sparkle"
+  print "  DOWNLOAD_URL_PREFIX=https://update.gzitvs.cn/meta/PCL.Mac/stable/updates/ zsh scripts/publish-sparkle-feed.sh dist/sparkle"
   exit 1
 fi
 

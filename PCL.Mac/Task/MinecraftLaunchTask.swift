@@ -588,7 +588,7 @@ public enum MinecraftLaunchTask {
                 return true
             }
         }
-        return runtime.executableURL.path == "/usr/bin/java"
+        return false
     }
 
     private static func attemptRuntimeSignalRecovery(_ runtime: JavaRuntime) -> Bool {

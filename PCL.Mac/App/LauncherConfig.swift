@@ -41,6 +41,7 @@ class LauncherConfig: Codable {
     public var hasEnteredLauncher: Bool = false
     public var multiplayerCustomPeer: String?
     public var curseForgeAPIKey: String?
+    public var softwareUpdateChannel: String?
     
     public init() {}
     
@@ -70,6 +71,7 @@ class LauncherConfig: Codable {
         self.hasEnteredLauncher = try container.decodeIfPresent(Bool.self, forKey: .hasEnteredLauncher) ?? false
         self.multiplayerCustomPeer = try container.decodeIfPresent(String.self, forKey: .multiplayerCustomPeer)
         self.curseForgeAPIKey = try container.decodeIfPresent(String.self, forKey: .curseForgeAPIKey)
+        self.softwareUpdateChannel = try container.decodeIfPresent(String.self, forKey: .softwareUpdateChannel)
     }
     
     public func encode(to encoder: any Encoder) throws {
@@ -85,6 +87,7 @@ class LauncherConfig: Codable {
         try container.encode(hasEnteredLauncher, forKey: .hasEnteredLauncher)
         try container.encode(multiplayerCustomPeer, forKey: .multiplayerCustomPeer)
         try container.encode(curseForgeAPIKey, forKey: .curseForgeAPIKey)
+        try container.encode(softwareUpdateChannel, forKey: .softwareUpdateChannel)
     }
     
     public static func save(_ config: LauncherConfig = .shared, to url: URL = URLConstants.configURL) throws {
@@ -109,5 +112,6 @@ class LauncherConfig: Codable {
         case hasEnteredLauncher
         case multiplayerCustomPeer
         case curseForgeAPIKey
+        case softwareUpdateChannel
     }
 }

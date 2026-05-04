@@ -14,7 +14,7 @@ extension AppRouter {
             .installerMinecraftDownload, .installerOptiFineDownload, .installerForgeDownload, .installerNeoForgeDownload, .installerCleanroomDownload, .installerFabricDownload, .installerLegacyFabricDownload, .installerQuiltDownload, .installerLabyModDownload, .installerLiteLoaderDownload:
             DownloadSidebar()
         case .multiplayer, .multiplayerSub, .multiplayerSettings: MultiplayerSidebar()
-        case .settings, .javaSettings, .otherSettings: SettingsSidebar()
+        case .settings, .javaSettings, .updateSettings, .otherSettings: SettingsSidebar()
         case .more, .about, .toolbox: MoreSidebar()
         case .tasks: TasksSidebar()
         default: EmptySidebar()

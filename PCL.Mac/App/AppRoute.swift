@@ -50,7 +50,7 @@ enum AppRoute: Identifiable, Hashable, Equatable {
 
     case multiplayerSub, multiplayerSettings
 
-    case javaSettings, otherSettings
+    case javaSettings, updateSettings, otherSettings
 
     case about, toolbox
 

@@ -100,6 +100,20 @@ struct AppArchitectureTests {
         #expect(updateRunner.invocations == [true])
     }
 
+    @Test @MainActor func updateSettingsViewModelPersistsChannelAndAutomaticBehavior() {
+        let updateController = FakeUpdateSettingsController()
+        let viewModel = UpdateSettingsViewModel(updateController: updateController)
+
+        viewModel.selectChannel(.beta)
+        viewModel.setAutomaticallyChecksForUpdates(false)
+        viewModel.setAutomaticallyDownloadsUpdates(true)
+
+        #expect(updateController.selectedChannelIdentifier == "beta")
+        #expect(updateController.automaticallyChecksForUpdates == true)
+        #expect(updateController.automaticallyDownloadsUpdates == true)
+        #expect(viewModel.selectedChannel == .beta)
+    }
+
     @Test @MainActor func javaSettingsViewModelRefreshUsesInjectedManager() throws {
         let manager = FakeJavaRuntimeManager(runtimes: [])
         let viewModel = JavaSettingsViewModel(javaManager: manager)
@@ -233,6 +247,23 @@ private final class FakeUpdateRunner: AppUpdateFlowRunning {
 
     func runInteractiveUpdateFlow(manually: Bool) {
         invocations.append(manually)
+    }
+}
+
+private final class FakeUpdateSettingsController: AppUpdateSettingsControlling {
+    var canUseSparkle: Bool = true
+    var automaticallyChecksForUpdates: Bool = true
+    var automaticallyDownloadsUpdates: Bool = false
+    var allowsAutomaticDownloads: Bool = true
+    var selectedChannelIdentifier: String?
+    var currentFeedURLString: String? = "https://update.gzitvs.cn/meta/PCL.Mac/stable/appcast.xml"
+    private(set) var invocations: [Bool] = []
+
+    func runInteractiveUpdateFlow(manually: Bool) {
+        invocations.append(manually)
+    }
+
+    func openReleaseNotesPage() {
     }
 }
 

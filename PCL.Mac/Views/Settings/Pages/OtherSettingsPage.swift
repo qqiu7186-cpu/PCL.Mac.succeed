@@ -54,16 +54,6 @@ struct OtherSettingsPage: View {
                 }
                 .frame(height: 40)
             }
-            MyCard("启动器更新", foldable: false) {
-                HStack {
-                    MyButton("检查更新") {
-                        viewModel.checkUpdates()
-                    }
-                    .frame(width: 150)
-                    Spacer()
-                }
-                .frame(height: 40)
-            }
         }
     }
 

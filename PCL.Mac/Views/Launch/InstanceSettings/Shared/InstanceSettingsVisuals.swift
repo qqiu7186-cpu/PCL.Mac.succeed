@@ -171,10 +171,11 @@ struct InstanceSettingsInputBox: View {
     let text: String
     var placeholder: Bool = false
     var showsChevron: Bool = false
+    var textColor: Color = .color1
 
     var body: some View {
         HStack(spacing: 8) {
-            MyText(text, size: 12, color: placeholder ? .colorGray3 : .color1)
+            MyText(text, size: 12, color: placeholder ? .colorGray3 : textColor)
             Spacer(minLength: 0)
             if showsChevron {
                 Image(systemName: "chevron.down")

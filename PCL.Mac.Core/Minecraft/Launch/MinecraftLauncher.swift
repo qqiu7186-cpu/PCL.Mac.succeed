@@ -272,7 +272,7 @@ public class MinecraftLauncher {
                 return true
             }
         }
-        return options.javaRuntime.executableURL.path == "/usr/bin/java"
+        return false
     }
 
     private static func sanitizeUnresolvedPlaceholders(_ argument: String) -> String {

@@ -13,6 +13,17 @@ protocol AppUpdateFlowRunning {
 }
 
 @MainActor
+protocol AppUpdateSettingsControlling: AnyObject, AppUpdateFlowRunning {
+    var canUseSparkle: Bool { get }
+    var automaticallyChecksForUpdates: Bool { get set }
+    var automaticallyDownloadsUpdates: Bool { get set }
+    var allowsAutomaticDownloads: Bool { get }
+    var selectedChannelIdentifier: String? { get set }
+    var currentFeedURLString: String? { get }
+    func openReleaseNotesPage()
+}
+
+@MainActor
 protocol JavaDownloadPrompting {
     func selectJavaDownload(from downloads: [JavaDownloadPackage], itemBuilder: (JavaDownloadPackage) -> ListItem) async -> Int?
 }
@@ -37,6 +48,7 @@ protocol JavaRuntimeManaging {
 
 extension SettingsViewModel: SettingsLogExporting {}
 extension UpdateService: AppUpdateFlowRunning {}
+extension UpdateService: AppUpdateSettingsControlling {}
 
 @MainActor
 extension JavaManager: JavaRuntimeManaging {

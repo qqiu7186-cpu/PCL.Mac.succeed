@@ -14,6 +14,7 @@ struct SettingsSidebar: Sidebar {
         VStack {
             MyNavigationList(
                 .init(.javaSettings, .iconJava, "Java 管理"),
+                .init(.updateSettings, .iconRefresh, "软件更新"),
                 .init(.otherSettings, .iconBox, "其它")
             )
             Spacer()

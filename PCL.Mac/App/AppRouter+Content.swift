@@ -59,6 +59,8 @@ extension AppRouter {
             MultiplayerSettingsPage()
         case .javaSettings:
             JavaSettingsPage()
+        case .updateSettings:
+            UpdateSettingsPage()
         case .otherSettings:
             OtherSettingsPage()
         case .about:

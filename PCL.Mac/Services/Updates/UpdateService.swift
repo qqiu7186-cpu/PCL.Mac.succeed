@@ -13,9 +13,11 @@ import Sparkle
 @MainActor
 final class UpdateService: NSObject {
     public static let shared: UpdateService = .init()
+    private static let releaseNotesPageURL: URL = .init(string: "https://update.gzitvs.cn/projects/PCL.Mac.Refactor")!
     
     private let semaphore: AsyncSemaphore = .init(value: 1)
     private lazy var sparkleController: SPUStandardUpdaterController? = makeSparkleController()
+    private lazy var updaterSettings: SPUUpdaterSettings = .init(hostBundle: .main)
     private var sparkleStarted: Bool = false
     private var latestCheckWasManual: Bool = false
     private var showingSparkleProgressHint: Bool = false
@@ -28,12 +30,60 @@ final class UpdateService: NSObject {
         sanitizedInfoString(for: "SUPublicEDKey")
     }
 
-    private var sparkleChannel: String? {
+    private var configuredSparkleChannel: String? {
         sanitizedInfoString(for: "SparkleChannel")
     }
     
-    private var canUseSparkle: Bool {
+    var canUseSparkle: Bool {
         sparkleFeedURLString != nil && sparklePublicKey != nil
+    }
+
+    var selectedChannelIdentifier: String? {
+        get {
+            let savedValue = LauncherConfig.shared.softwareUpdateChannel?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let savedValue, !savedValue.isEmpty {
+                return savedValue
+            }
+            return configuredSparkleChannel
+        }
+        set {
+            let trimmedValue = newValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedValue = (trimmedValue?.isEmpty == false) ? trimmedValue : nil
+            LauncherConfig.mutate {
+                $0.softwareUpdateChannel = normalizedValue
+            }
+            do {
+                try LauncherConfig.save()
+            } catch {
+                err("保存更新通道失败：\(error.localizedDescription)")
+                hint("保存更新通道失败：\(error.localizedDescription)", type: .critical)
+            }
+            if sparkleStarted {
+                sparkleController?.updater.resetUpdateCycle()
+            }
+        }
+    }
+
+    var currentFeedURLString: String? {
+        feedURLString(forChannelIdentifier: selectedChannelIdentifier)
+    }
+
+    var automaticallyChecksForUpdates: Bool {
+        get { updaterSettings.automaticallyChecksForUpdates }
+        set { updaterSettings.automaticallyChecksForUpdates = newValue }
+    }
+
+    var automaticallyDownloadsUpdates: Bool {
+        get { updaterSettings.automaticallyDownloadsUpdates }
+        set { updaterSettings.automaticallyDownloadsUpdates = newValue }
+    }
+
+    var allowsAutomaticDownloads: Bool {
+        updaterSettings.allowsAutomaticUpdates
+    }
+
+    func openReleaseNotesPage() {
+        NSWorkspace.shared.open(Self.releaseNotesPageURL)
     }
     
     public func runInteractiveUpdateFlow(manually: Bool = false) {
@@ -146,18 +196,40 @@ final class UpdateService: NSObject {
         let formatted: String = .init(format: value < 10 && unitIndex > 0 ? "%.1f" : "%.0f", value)
         return "\(formatted) \(units[unitIndex])"
     }
+
+    private func feedURLString(forChannelIdentifier channelIdentifier: String?) -> String? {
+        guard let sparkleFeedURLString else {
+            return nil
+        }
+
+        let normalizedChannel = channelIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalizedChannel, !normalizedChannel.isEmpty else {
+            return sparkleFeedURLString
+        }
+
+        guard let feedURL = URL(string: sparkleFeedURLString),
+              var components = URLComponents(url: feedURL, resolvingAgainstBaseURL: false) else {
+            return sparkleFeedURLString
+        }
+
+        var pathComponents = components.path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        if let stableIndex = pathComponents.lastIndex(of: "stable") {
+            pathComponents[stableIndex] = normalizedChannel
+            components.path = pathComponents.joined(separator: "/")
+            return components.string ?? sparkleFeedURLString
+        }
+
+        return sparkleFeedURLString
+    }
 }
 
 extension UpdateService: SPUUpdaterDelegate {
     func feedURLString(for updater: SPUUpdater) -> String? {
-        sparkleFeedURLString
+        feedURLString(forChannelIdentifier: selectedChannelIdentifier)
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        guard let sparkleChannel else {
-            return []
-        }
-        return [sparkleChannel]
+        []
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {

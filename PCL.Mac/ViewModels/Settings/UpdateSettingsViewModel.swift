@@ -66,6 +66,11 @@ final class UpdateSettingsViewModel: ObservableObject {
         }
         return "Sparkle 未完成配置，当前会回退到旧版 update.json 更新链路。"
     }
+
+    var userIDDescription: String {
+        updateController.softwareUpdateUserID
+    }
+
     func selectChannel(_ option: ChannelOption) {
         guard selectedChannel != option else { return }
         selectedChannel = option

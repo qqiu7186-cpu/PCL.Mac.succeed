@@ -14,6 +14,7 @@ import Sparkle
 final class UpdateService: NSObject {
     public static let shared: UpdateService = .init()
     private static let releaseNotesPageURL: URL = .init(string: "https://update.gzitvs.cn/projects/PCL.Mac.Refactor")!
+    private static let defaultDynamicFeedURL: URL = .init(string: "https://update.gzitvs.cn/api/v1/appcast/cn.gzitvs.PCL-Mac/")!
     
     private let semaphore: AsyncSemaphore = .init(value: 1)
     private lazy var sparkleController: SPUStandardUpdaterController? = makeSparkleController()
@@ -66,6 +67,23 @@ final class UpdateService: NSObject {
 
     var currentFeedURLString: String? {
         feedURLString(forChannelIdentifier: selectedChannelIdentifier)
+    }
+
+    var softwareUpdateUserID: String {
+        if let existing = LauncherConfig.shared.softwareUpdateUserID?.trimmingCharacters(in: .whitespacesAndNewlines), !existing.isEmpty {
+            return existing
+        }
+
+        let generatedID = UUID().uuidString.lowercased()
+        LauncherConfig.mutate {
+            $0.softwareUpdateUserID = generatedID
+        }
+        do {
+            try LauncherConfig.save()
+        } catch {
+            err("保存更新用户标识失败：\(error.localizedDescription)")
+        }
+        return generatedID
     }
 
     var automaticallyChecksForUpdates: Bool {
@@ -198,28 +216,49 @@ final class UpdateService: NSObject {
     }
 
     private func feedURLString(forChannelIdentifier channelIdentifier: String?) -> String? {
-        guard let sparkleFeedURLString else {
+        let baseFeedURL: URL
+        if let sparkleFeedURLString,
+           let configuredURL = URL(string: sparkleFeedURLString) {
+            baseFeedURL = configuredURL
+        } else {
+            baseFeedURL = Self.defaultDynamicFeedURL
+        }
+
+        guard var components = URLComponents(url: baseFeedURL, resolvingAgainstBaseURL: false) else {
             return nil
         }
 
         let normalizedChannel = channelIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let normalizedChannel, !normalizedChannel.isEmpty else {
-            return sparkleFeedURLString
+        var queryItems: [URLQueryItem] = [
+            .init(name: "current_build", value: String(Metadata.bundleVersion)),
+            .init(name: "user_id", value: softwareUpdateUserID),
+            .init(name: "macos_version", value: ProcessInfo.processInfo.operatingSystemVersionString.sparkleNormalizedMacOSVersion)
+        ]
+
+        if let normalizedChannel, !normalizedChannel.isEmpty {
+            queryItems.insert(.init(name: "channel", value: normalizedChannel), at: 0)
         }
 
-        guard let feedURL = URL(string: sparkleFeedURLString),
-              var components = URLComponents(url: feedURL, resolvingAgainstBaseURL: false) else {
-            return sparkleFeedURLString
+        components.queryItems = queryItems
+        return components.string
+    }
+}
+
+private extension String {
+    var sparkleNormalizedMacOSVersion: String {
+        let pattern = #"(\d+)\.(\d+)(?:\.(\d+))?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: self, range: NSRange(self.startIndex..., in: self)) else {
+            return "0.0"
         }
 
-        var pathComponents = components.path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        if let stableIndex = pathComponents.lastIndex(of: "stable") {
-            pathComponents[stableIndex] = normalizedChannel
-            components.path = pathComponents.joined(separator: "/")
-            return components.string ?? sparkleFeedURLString
+        let major = Range(match.range(at: 1), in: self).map { String(self[$0]) } ?? "0"
+        let minor = Range(match.range(at: 2), in: self).map { String(self[$0]) } ?? "0"
+        let patch = Range(match.range(at: 3), in: self).map { String(self[$0]) }
+        if let patch, !patch.isEmpty {
+            return "\(major).\(minor).\(patch)"
         }
-
-        return sparkleFeedURLString
+        return "\(major).\(minor)"
     }
 }
 

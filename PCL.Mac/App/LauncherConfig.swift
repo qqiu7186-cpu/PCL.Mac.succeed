@@ -42,6 +42,7 @@ class LauncherConfig: Codable {
     public var multiplayerCustomPeer: String?
     public var curseForgeAPIKey: String?
     public var softwareUpdateChannel: String?
+    public var softwareUpdateUserID: String?
     
     public init() {}
     
@@ -72,6 +73,7 @@ class LauncherConfig: Codable {
         self.multiplayerCustomPeer = try container.decodeIfPresent(String.self, forKey: .multiplayerCustomPeer)
         self.curseForgeAPIKey = try container.decodeIfPresent(String.self, forKey: .curseForgeAPIKey)
         self.softwareUpdateChannel = try container.decodeIfPresent(String.self, forKey: .softwareUpdateChannel)
+        self.softwareUpdateUserID = try container.decodeIfPresent(String.self, forKey: .softwareUpdateUserID)
     }
     
     public func encode(to encoder: any Encoder) throws {
@@ -88,6 +90,7 @@ class LauncherConfig: Codable {
         try container.encode(multiplayerCustomPeer, forKey: .multiplayerCustomPeer)
         try container.encode(curseForgeAPIKey, forKey: .curseForgeAPIKey)
         try container.encode(softwareUpdateChannel, forKey: .softwareUpdateChannel)
+        try container.encode(softwareUpdateUserID, forKey: .softwareUpdateUserID)
     }
     
     public static func save(_ config: LauncherConfig = .shared, to url: URL = URLConstants.configURL) throws {
@@ -113,5 +116,6 @@ class LauncherConfig: Codable {
         case multiplayerCustomPeer
         case curseForgeAPIKey
         case softwareUpdateChannel
+        case softwareUpdateUserID
     }
 }

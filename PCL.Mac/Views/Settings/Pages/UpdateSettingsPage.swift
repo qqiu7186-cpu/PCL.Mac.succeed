@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct UpdateSettingsPage: View {
     @StateObject private var viewModel: UpdateSettingsViewModel = .init()
@@ -17,6 +18,32 @@ struct UpdateSettingsPage: View {
 
                     configLine(label: "自动下载更新") {
                         statusText(viewModel.automaticallyDownloadsUpdates ? "已开启" : (viewModel.allowsAutomaticDownloads ? "已关闭" : "当前不可用"))
+                    }
+
+                    configLine(label: "用户标识") {
+                        HStack(spacing: 10) {
+                            MyText(viewModel.userIDDescription, size: 12, color: .color1)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(viewModel.userIDDescription, forType: .string)
+                                hint("已复制用户标识。", type: .finish)
+                            } label: {
+                                Image(.iconCopy)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 14, height: 14)
+                                    .foregroundStyle(Color.color3)
+                                    .padding(6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.color3.opacity(0.12))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 

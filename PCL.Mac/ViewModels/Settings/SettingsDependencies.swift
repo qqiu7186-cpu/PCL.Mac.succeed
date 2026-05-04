@@ -20,6 +20,7 @@ protocol AppUpdateSettingsControlling: AnyObject, AppUpdateFlowRunning {
     var allowsAutomaticDownloads: Bool { get }
     var selectedChannelIdentifier: String? { get set }
     var currentFeedURLString: String? { get }
+    var softwareUpdateUserID: String { get }
     func openReleaseNotesPage()
 }
 

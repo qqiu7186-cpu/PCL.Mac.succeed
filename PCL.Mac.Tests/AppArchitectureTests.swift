@@ -257,6 +257,7 @@ private final class FakeUpdateSettingsController: AppUpdateSettingsControlling {
     var allowsAutomaticDownloads: Bool = true
     var selectedChannelIdentifier: String?
     var currentFeedURLString: String? = "https://update.gzitvs.cn/meta/PCL.Mac/stable/appcast.xml"
+    var softwareUpdateUserID: String = "test-user-001"
     private(set) var invocations: [Bool] = []
 
     func runInteractiveUpdateFlow(manually: Bool) {

@@ -114,6 +114,30 @@ struct AppArchitectureTests {
         #expect(viewModel.selectedChannel == .beta)
     }
 
+    @Test func sparkleChannelRoutingUsesDefaultChannelForStable() {
+        #expect(SparkleChannelRouting.normalizedChannelIdentifier(nil) == nil)
+        #expect(SparkleChannelRouting.normalizedChannelIdentifier("   ") == nil)
+        #expect(SparkleChannelRouting.allowedChannels(for: nil).isEmpty)
+        #expect(SparkleChannelRouting.allowedChannels(for: "   ").isEmpty)
+    }
+
+    @Test func sparkleChannelRoutingUsesExplicitChannelForBeta() {
+        #expect(SparkleChannelRouting.normalizedChannelIdentifier(" beta ") == "beta")
+        #expect(SparkleChannelRouting.allowedChannels(for: "beta") == ["beta"])
+    }
+
+    @Test func sparkleChannelRoutingRejectsBetaPathForStable() {
+        let betaURL = URL(string: "https://update.gzitvs.cn/media/meta/cn.gzitvs.PCL-Mac/beta/updates/PCL.Mac%201.0.1.zip")
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaURL, selectedChannelIdentifier: nil) == false)
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaURL, selectedChannelIdentifier: "beta") == true)
+    }
+
+    @Test func sparkleChannelRoutingRejectsMismatchedExplicitChannel() {
+        let stableURL = URL(string: "https://update.gzitvs.cn/media/meta/cn.gzitvs.PCL-Mac/stable/updates/PCL.Mac%201.0.1.zip")
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: "beta", fileURL: stableURL, selectedChannelIdentifier: nil) == false)
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: "beta", fileURL: stableURL, selectedChannelIdentifier: "beta") == true)
+    }
+
     @Test @MainActor func javaSettingsViewModelRefreshUsesInjectedManager() throws {
         let manager = FakeJavaRuntimeManager(runtimes: [])
         let viewModel = JavaSettingsViewModel(javaManager: manager)

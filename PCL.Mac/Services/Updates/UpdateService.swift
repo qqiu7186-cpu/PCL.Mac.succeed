@@ -10,6 +10,56 @@ import AppKit
 import Core
 import Sparkle
 
+enum SparkleChannelRouting {
+    static func normalizedChannelIdentifier(_ channelIdentifier: String?) -> String? {
+        let normalizedChannel = channelIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalizedChannel, !normalizedChannel.isEmpty else {
+            return nil
+        }
+        return normalizedChannel
+    }
+
+    static func allowedChannels(for channelIdentifier: String?) -> Set<String> {
+        guard let channelIdentifier = normalizedChannelIdentifier(channelIdentifier) else {
+            return []
+        }
+        return [channelIdentifier]
+    }
+
+    static func inferredChannelIdentifier(from fileURL: URL?) -> String? {
+        guard let fileURL else {
+            return nil
+        }
+        let path = fileURL.path.lowercased()
+        if path.contains("/beta-gray/") {
+            return "beta-gray"
+        }
+        if path.contains("/beta/") {
+            return "beta"
+        }
+        if path.contains("/stable/") {
+            return nil
+        }
+        return nil
+    }
+
+    static func allowsAppcastItem(itemChannelIdentifier: String?, fileURL: URL?, selectedChannelIdentifier: String?) -> Bool {
+        let normalizedSelectedChannel = normalizedChannelIdentifier(selectedChannelIdentifier)
+        let normalizedItemChannel = normalizedChannelIdentifier(itemChannelIdentifier)
+        let inferredItemChannel = inferredChannelIdentifier(from: fileURL)
+
+        if let normalizedItemChannel {
+            return normalizedItemChannel == normalizedSelectedChannel
+        }
+
+        if let inferredItemChannel {
+            return inferredItemChannel == normalizedSelectedChannel
+        }
+
+        return true
+    }
+}
+
 @MainActor
 final class UpdateService: NSObject {
     public static let shared: UpdateService = .init()
@@ -41,15 +91,14 @@ final class UpdateService: NSObject {
 
     var selectedChannelIdentifier: String? {
         get {
-            let savedValue = LauncherConfig.shared.softwareUpdateChannel?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let savedValue, !savedValue.isEmpty {
+            let savedValue = SparkleChannelRouting.normalizedChannelIdentifier(LauncherConfig.shared.softwareUpdateChannel)
+            if let savedValue {
                 return savedValue
             }
-            return configuredSparkleChannel
+            return SparkleChannelRouting.normalizedChannelIdentifier(configuredSparkleChannel)
         }
         set {
-            let trimmedValue = newValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalizedValue = (trimmedValue?.isEmpty == false) ? trimmedValue : nil
+            let normalizedValue = SparkleChannelRouting.normalizedChannelIdentifier(newValue)
             LauncherConfig.mutate {
                 $0.softwareUpdateChannel = normalizedValue
             }
@@ -228,13 +277,13 @@ final class UpdateService: NSObject {
             return nil
         }
 
-        let normalizedChannel = channelIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
         var queryItems: [URLQueryItem] = [
             .init(name: "current_build", value: String(Metadata.bundleVersion)),
             .init(name: "user_id", value: softwareUpdateUserID),
             .init(name: "macos_version", value: ProcessInfo.processInfo.operatingSystemVersionString.sparkleNormalizedMacOSVersion)
         ]
 
+        let normalizedChannel = SparkleChannelRouting.normalizedChannelIdentifier(channelIdentifier)
         if let normalizedChannel, !normalizedChannel.isEmpty {
             queryItems.insert(.init(name: "channel", value: normalizedChannel), at: 0)
         }
@@ -268,7 +317,24 @@ extension UpdateService: SPUUpdaterDelegate {
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        []
+        SparkleChannelRouting.allowedChannels(for: selectedChannelIdentifier)
+    }
+
+    func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
+        let selectedChannelIdentifier = selectedChannelIdentifier
+        let eligibleItems = appcast.items.filter {
+            SparkleChannelRouting.allowsAppcastItem(
+                itemChannelIdentifier: $0.channel,
+                fileURL: $0.fileURL,
+                selectedChannelIdentifier: selectedChannelIdentifier
+            )
+        }
+
+        guard eligibleItems.count != appcast.items.count else {
+            return nil
+        }
+
+        return eligibleItems.first ?? SUAppcastItem.empty()
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {

@@ -114,11 +114,21 @@ struct AppArchitectureTests {
         #expect(viewModel.selectedChannel == .beta)
     }
 
+    @Test @MainActor func updateSettingsViewModelSupportsBetaGrayChannel() {
+        let updateController = FakeUpdateSettingsController()
+        let viewModel = UpdateSettingsViewModel(updateController: updateController)
+
+        viewModel.selectChannel(.betaGray)
+
+        #expect(updateController.selectedChannelIdentifier == "beta-gray")
+        #expect(viewModel.selectedChannel == .betaGray)
+    }
+
     @Test func sparkleChannelRoutingUsesDefaultChannelForStable() {
         #expect(SparkleChannelRouting.normalizedChannelIdentifier(nil) == nil)
         #expect(SparkleChannelRouting.normalizedChannelIdentifier("   ") == nil)
-        #expect(SparkleChannelRouting.allowedChannels(for: nil).isEmpty)
-        #expect(SparkleChannelRouting.allowedChannels(for: "   ").isEmpty)
+        #expect(SparkleChannelRouting.allowedChannels(for: nil) == ["stable"])
+        #expect(SparkleChannelRouting.allowedChannels(for: "   ") == ["stable"])
     }
 
     @Test func sparkleChannelRoutingUsesExplicitChannelForBeta() {
@@ -137,6 +147,12 @@ struct AppArchitectureTests {
         let betaURL = URL(string: "https://update.gzitvs.cn/media/meta/cn.gzitvs.PCL-Mac/beta/updates/PCL.Mac%201.0.1.zip")
         #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaURL, selectedChannelIdentifier: nil) == false)
         #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaURL, selectedChannelIdentifier: "beta") == true)
+    }
+
+    @Test func sparkleChannelRoutingTreatsExplicitStableAsStableChannel() {
+        let stableURL = URL(string: "https://update.gzitvs.cn/media/meta/cn.gzitvs.PCL-Mac/stable/updates/PCL.Mac%201.0.1.zip")
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: "stable", fileURL: stableURL, selectedChannelIdentifier: nil) == true)
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: stableURL, selectedChannelIdentifier: nil) == true)
     }
 
     @Test func sparkleChannelRoutingSupportsBetaGrayPath() {
@@ -294,7 +310,7 @@ private final class FakeUpdateSettingsController: AppUpdateSettingsControlling {
     var automaticallyDownloadsUpdates: Bool = false
     var allowsAutomaticDownloads: Bool = true
     var selectedChannelIdentifier: String?
-    var currentFeedURLString: String? = "https://update.gzitvs.cn/meta/PCL.Mac/stable/appcast.xml"
+    var currentFeedURLString: String? = "https://update.gzitvs.cn/api/v1/appcast/cn.gzitvs.PCL-Mac/?channel=stable&current_build=1"
     var softwareUpdateUserID: String = "test-user-001"
     private(set) var invocations: [Bool] = []
 

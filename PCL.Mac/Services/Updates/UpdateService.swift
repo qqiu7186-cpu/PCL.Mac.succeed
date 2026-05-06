@@ -22,10 +22,7 @@ enum SparkleChannelRouting {
     }
 
     static func allowedChannels(for channelIdentifier: String?) -> Set<String> {
-        guard let channelIdentifier = normalizedChannelIdentifier(channelIdentifier) else {
-            return []
-        }
-        return [channelIdentifier]
+        [requestChannelIdentifier(for: channelIdentifier)]
     }
 
     static func requestChannelIdentifier(for channelIdentifier: String?) -> String {
@@ -50,16 +47,16 @@ enum SparkleChannelRouting {
     }
 
     static func allowsAppcastItem(itemChannelIdentifier: String?, fileURL: URL?, selectedChannelIdentifier: String?) -> Bool {
-        let normalizedSelectedChannel = normalizedChannelIdentifier(selectedChannelIdentifier)
+        let selectedChannel = requestChannelIdentifier(for: selectedChannelIdentifier)
         let normalizedItemChannel = normalizedChannelIdentifier(itemChannelIdentifier)
         let inferredItemChannel = inferredChannelIdentifier(from: fileURL)
 
         if let normalizedItemChannel {
-            return normalizedItemChannel == normalizedSelectedChannel
+            return normalizedItemChannel == selectedChannel
         }
 
         if let inferredItemChannel {
-            return inferredItemChannel == normalizedSelectedChannel
+            return inferredItemChannel == selectedChannel
         }
 
         return true
@@ -167,7 +164,11 @@ final class UpdateService: NSObject {
             }
 
             guard startSparkleIfNeeded() else {
-                await runLegacyUpdateFlow(manually: manually)
+                let message = "未检测到可用的 Sparkle 更新源，无法检查启动器更新。"
+                err(message)
+                if manually {
+                    hint(message, type: .critical)
+                }
                 return
             }
 
@@ -184,7 +185,7 @@ final class UpdateService: NSObject {
     
     private func startSparkleIfNeeded() -> Bool {
         guard canUseSparkle, let sparkleController else {
-            log("Sparkle 未完成配置，继续使用旧更新链路")
+            warn("Sparkle 更新源未完成配置")
             return false
         }
         guard !sparkleStarted else {
@@ -195,46 +196,6 @@ final class UpdateService: NSObject {
         sparkleStarted = true
         log("Sparkle 更新器已启动")
         return true
-    }
-
-    private func runLegacyUpdateFlow(manually: Bool) async {
-        if manually {
-            hint("正在检查更新……")
-        }
-        let version: UpdateModel.Version?
-        do {
-            version = try await UpdateManager.shared.checkUpdates()
-        } catch {
-            err("检查更新失败：\(error.localizedDescription)")
-            if manually {
-                hint("检查更新失败：\(error.localizedDescription)", type: .critical)
-            }
-            return
-        }
-        guard let version else {
-            if manually {
-                hint("当前使用的是最新版本，无需更新！", type: .finish)
-            }
-            return
-        }
-
-        guard await MessageBoxManager.shared.showTextAsync(
-            title: "PCL.Mac 有更新可用",
-            content: "发现新版本：\(version.name)\n更新摘要：\(version.summary)\n\n是否下载并安装更新？",
-            level: .info,
-            buttons: version.updateLogLinks.enumerated().map { index, link in
-                return .init(id: index + 2, label: link.name, type: .normal) {
-                    NSWorkspace.shared.open(link.url)
-                }
-            } + [.no(), .yes(label: "下载并安装（\(formatSize(version.downloads.size))）", type: .highlight)]
-        ) == 1 else { return }
-        hint("正在下载并安装更新，完成后 PCL.Mac 会自动重启……")
-        do {
-            try await UpdateManager.shared.installUpdate(version)
-        } catch {
-            err("更新启动器失败：\(error.localizedDescription)")
-            hint("更新失败：\(error.localizedDescription)", type: .critical)
-        }
     }
 
     private func makeSparkleController() -> SPUStandardUpdaterController? {
@@ -250,20 +211,6 @@ final class UpdateService: NSObject {
         }
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
-    }
-
-    private func formatSize(_ size: Int) -> String {
-        let units: [String] = ["B", "KB", "MB", "GB", "TB"]
-        var value: Double = .init(size)
-        var unitIndex: Int = 0
-        
-        while value >= 1024 && unitIndex < units.count - 1 {
-            value /= 1024
-            unitIndex += 1
-        }
-        
-        let formatted: String = .init(format: value < 10 && unitIndex > 0 ? "%.1f" : "%.0f", value)
-        return "\(formatted) \(units[unitIndex])"
     }
 
     private func feedURLString(forChannelIdentifier channelIdentifier: String?) -> String? {

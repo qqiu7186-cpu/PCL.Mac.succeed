@@ -6,6 +6,7 @@ final class UpdateSettingsViewModel: ObservableObject {
     enum ChannelOption: String, CaseIterable, Identifiable {
         case stable = ""
         case beta = "beta"
+        case betaGray = "beta-gray"
 
         var id: String { rawValue }
 
@@ -13,6 +14,7 @@ final class UpdateSettingsViewModel: ObservableObject {
             switch self {
             case .stable: "正式版 / Release"
             case .beta: "测试版 / Beta"
+            case .betaGray: "灰度测试 / Beta Gray"
             }
         }
 
@@ -20,6 +22,7 @@ final class UpdateSettingsViewModel: ObservableObject {
             switch self {
             case .stable: "稳定更新，适合日常使用。"
             case .beta: "优先收到测试构建，可能包含未完全验证的改动。"
+            case .betaGray: "用于更小范围的预灰度测试，适合提前验证更新。"
             }
         }
 
@@ -62,9 +65,9 @@ final class UpdateSettingsViewModel: ObservableObject {
             return "当前为调试环境，自动更新检查不会执行。"
         }
         if canUseSparkle {
-            return "Sparkle 已启用，当前会优先使用自动更新链路。"
+            return "当前已接入 SparkleGrayAdmin 动态更新源。"
         }
-        return "Sparkle 未完成 feed 配置，当前会回退到旧版 update.json 更新链路。"
+        return "当前未检测到可用的 Sparkle 更新源，无法检查启动器更新。"
     }
 
     var userIDDescription: String {

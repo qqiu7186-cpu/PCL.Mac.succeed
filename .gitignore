@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 _MACOSX
+.playwright-mcp/
+smoke-tests.xcresult/
+shasum
 
 # Xcode
 PCL.Mac.xcodeproj/xcuserdata

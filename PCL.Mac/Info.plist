@@ -11,8 +11,6 @@
 	</dict>
 	<key>SUFeedURL</key>
 	<string>https://update.gzitvs.cn/api/v1/appcast/cn.gzitvs.PCL-Mac/</string>
-	<key>SUPublicEDKey</key>
-	<string>$(SPARKLE_PUBLIC_ED_KEY)</string>
 	<key>SparkleChannel</key>
 	<string>$(SPARKLE_CHANNEL)</string>
 </dict>

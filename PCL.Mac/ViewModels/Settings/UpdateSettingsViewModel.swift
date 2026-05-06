@@ -64,7 +64,7 @@ final class UpdateSettingsViewModel: ObservableObject {
         if canUseSparkle {
             return "Sparkle 已启用，当前会优先使用自动更新链路。"
         }
-        return "Sparkle 未完成配置，当前会回退到旧版 update.json 更新链路。"
+        return "Sparkle 未完成 feed 配置，当前会回退到旧版 update.json 更新链路。"
     }
 
     var userIDDescription: String {

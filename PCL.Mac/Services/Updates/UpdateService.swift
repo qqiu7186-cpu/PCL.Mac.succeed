@@ -11,6 +11,8 @@ import Core
 import Sparkle
 
 enum SparkleChannelRouting {
+    static let stableChannelIdentifier: String = "stable"
+
     static func normalizedChannelIdentifier(_ channelIdentifier: String?) -> String? {
         let normalizedChannel = channelIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let normalizedChannel, !normalizedChannel.isEmpty else {
@@ -24,6 +26,10 @@ enum SparkleChannelRouting {
             return []
         }
         return [channelIdentifier]
+    }
+
+    static func requestChannelIdentifier(for channelIdentifier: String?) -> String {
+        normalizedChannelIdentifier(channelIdentifier) ?? stableChannelIdentifier
     }
 
     static func inferredChannelIdentifier(from fileURL: URL?) -> String? {
@@ -77,16 +83,12 @@ final class UpdateService: NSObject {
         sanitizedInfoString(for: "SUFeedURL")
     }
     
-    private var sparklePublicKey: String? {
-        sanitizedInfoString(for: "SUPublicEDKey")
-    }
-
     private var configuredSparkleChannel: String? {
         sanitizedInfoString(for: "SparkleChannel")
     }
     
     var canUseSparkle: Bool {
-        sparkleFeedURLString != nil && sparklePublicKey != nil
+        sparkleFeedURLString != nil
     }
 
     var selectedChannelIdentifier: String? {
@@ -277,16 +279,32 @@ final class UpdateService: NSObject {
             return nil
         }
 
+        let isDynamicFeed = components.path.contains("/api/v1/appcast/")
+
+        if !isDynamicFeed {
+            let normalizedChannel = SparkleChannelRouting.normalizedChannelIdentifier(channelIdentifier)
+            guard let normalizedChannel else {
+                components.queryItems = nil
+                return components.string
+            }
+
+            var pathComponents = components.path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            if let stableIndex = pathComponents.lastIndex(of: SparkleChannelRouting.stableChannelIdentifier) {
+                pathComponents[stableIndex] = normalizedChannel
+                components.path = pathComponents.joined(separator: "/")
+            }
+            components.queryItems = nil
+            return components.string
+        }
+
         var queryItems: [URLQueryItem] = [
             .init(name: "current_build", value: String(Metadata.bundleVersion)),
             .init(name: "user_id", value: softwareUpdateUserID),
             .init(name: "macos_version", value: ProcessInfo.processInfo.operatingSystemVersionString.sparkleNormalizedMacOSVersion)
         ]
 
-        let normalizedChannel = SparkleChannelRouting.normalizedChannelIdentifier(channelIdentifier)
-        if let normalizedChannel, !normalizedChannel.isEmpty {
-            queryItems.insert(.init(name: "channel", value: normalizedChannel), at: 0)
-        }
+        let requestChannelIdentifier = SparkleChannelRouting.requestChannelIdentifier(for: channelIdentifier)
+        queryItems.insert(.init(name: "channel", value: requestChannelIdentifier), at: 0)
 
         components.queryItems = queryItems
         return components.string

@@ -126,10 +126,24 @@ struct AppArchitectureTests {
         #expect(SparkleChannelRouting.allowedChannels(for: "beta") == ["beta"])
     }
 
+    @Test func sparkleChannelRoutingUsesStableRequestChannelByDefault() {
+        #expect(SparkleChannelRouting.requestChannelIdentifier(for: nil) == "stable")
+        #expect(SparkleChannelRouting.requestChannelIdentifier(for: "   ") == "stable")
+        #expect(SparkleChannelRouting.requestChannelIdentifier(for: "beta") == "beta")
+        #expect(SparkleChannelRouting.requestChannelIdentifier(for: "beta-gray") == "beta-gray")
+    }
+
     @Test func sparkleChannelRoutingRejectsBetaPathForStable() {
         let betaURL = URL(string: "https://update.gzitvs.cn/media/meta/cn.gzitvs.PCL-Mac/beta/updates/PCL.Mac%201.0.1.zip")
         #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaURL, selectedChannelIdentifier: nil) == false)
         #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaURL, selectedChannelIdentifier: "beta") == true)
+    }
+
+    @Test func sparkleChannelRoutingSupportsBetaGrayPath() {
+        let betaGrayURL = URL(string: "https://update.gzitvs.cn/media/meta/cn.gzitvs.PCL-Mac/beta-gray/updates/PCL.Mac%201.0.1.zip")
+        #expect(SparkleChannelRouting.inferredChannelIdentifier(from: betaGrayURL) == "beta-gray")
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaGrayURL, selectedChannelIdentifier: nil) == false)
+        #expect(SparkleChannelRouting.allowsAppcastItem(itemChannelIdentifier: nil, fileURL: betaGrayURL, selectedChannelIdentifier: "beta-gray") == true)
     }
 
     @Test func sparkleChannelRoutingRejectsMismatchedExplicitChannel() {

@@ -64,7 +64,7 @@ struct UpdateSettingsPage: View {
                 }
 
                 if !viewModel.canUseSparkle {
-                    MyText("当前未检测到完整的 Sparkle 配置，因此这里只能触发旧版更新链路；等公钥与 feed 全部配置完成后，这里会自动切换到 Sparkle。", size: 11.5, color: .colorGray3)
+                    MyText("当前未检测到 Sparkle feed 配置，因此这里只能触发旧版更新链路；等 feed 配置完成后，这里会自动切换到 Sparkle。", size: 11.5, color: .colorGray3)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 6)
                 }

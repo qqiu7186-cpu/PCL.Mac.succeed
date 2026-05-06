@@ -3,7 +3,6 @@
 _MACOSX
 .playwright-mcp/
 smoke-tests.xcresult/
-shasum
 
 # Xcode
 PCL.Mac.xcodeproj/xcuserdata

@@ -114,14 +114,12 @@ struct AppArchitectureTests {
         #expect(viewModel.selectedChannel == .beta)
     }
 
-    @Test @MainActor func updateSettingsViewModelSupportsBetaGrayChannel() {
+    @Test @MainActor func updateSettingsViewModelMapsLegacyBetaGrayChannelToBeta() {
         let updateController = FakeUpdateSettingsController()
+        updateController.selectedChannelIdentifier = "beta-gray"
         let viewModel = UpdateSettingsViewModel(updateController: updateController)
 
-        viewModel.selectChannel(.betaGray)
-
-        #expect(updateController.selectedChannelIdentifier == "beta-gray")
-        #expect(viewModel.selectedChannel == .betaGray)
+        #expect(viewModel.selectedChannel == .beta)
     }
 
     @Test func sparkleChannelRoutingUsesDefaultChannelForStable() {
@@ -141,6 +139,161 @@ struct AppArchitectureTests {
         #expect(SparkleChannelRouting.requestChannelIdentifier(for: "   ") == "stable")
         #expect(SparkleChannelRouting.requestChannelIdentifier(for: "beta") == "beta")
         #expect(SparkleChannelRouting.requestChannelIdentifier(for: "beta-gray") == "beta-gray")
+    }
+
+    @Test func sparkleChannelRoutingPrioritizesBetaGrayBeforeBeta() {
+        #expect(SparkleChannelRouting.prioritizedRequestChannels(for: nil) == ["stable"])
+        #expect(SparkleChannelRouting.prioritizedRequestChannels(for: "beta") == ["beta-gray", "beta"])
+        #expect(SparkleChannelRouting.prioritizedRequestChannels(for: "beta-gray") == ["beta-gray"])
+    }
+
+    @Test func appcastCandidateSelectorPrefersHigherVersionOverBetaGrayPriority() {
+        let candidates: [AppcastUpdateCandidate] = [
+            .init(channelIdentifier: "beta-gray", versionString: "101"),
+            .init(channelIdentifier: "beta", versionString: "105")
+        ]
+
+        let selected = AppcastUpdateCandidateSelector.preferredCandidate(
+            from: candidates,
+            prioritizedChannels: ["beta-gray", "beta"]
+        )
+
+        #expect(selected == .init(channelIdentifier: "beta", versionString: "105"))
+    }
+
+    @Test func appcastCandidateSelectorPrefersBetaGrayWhenVersionsTie() {
+        let candidates: [AppcastUpdateCandidate] = [
+            .init(channelIdentifier: "beta-gray", versionString: "105"),
+            .init(channelIdentifier: "beta", versionString: "105")
+        ]
+
+        let selected = AppcastUpdateCandidateSelector.preferredCandidate(
+            from: candidates,
+            prioritizedChannels: ["beta-gray", "beta"]
+        )
+
+        #expect(selected == .init(channelIdentifier: "beta-gray", versionString: "105"))
+    }
+
+    @Test func appcastFeedCandidateEvaluatorRejectsCandidateBelowMinimumUpdateVersion() {
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <item>
+              <sparkle:version>105</sparkle:version>
+              <sparkle:minimumUpdateVersion>101</sparkle:minimumUpdateVersion>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let candidate = AppcastFeedCandidateEvaluator.bestAvailableCandidate(
+            in: Data(xml.utf8),
+            channelIdentifier: "beta",
+            currentBuildVersion: "100",
+            currentSystemVersion: "14.4.0"
+        )
+
+        #expect(candidate == nil)
+    }
+
+    @Test func appcastFeedCandidateEvaluatorRejectsCandidateBelowMinimumSystemVersion() {
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <item>
+              <sparkle:version>105</sparkle:version>
+              <sparkle:minimumSystemVersion>15.0.0</sparkle:minimumSystemVersion>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let candidate = AppcastFeedCandidateEvaluator.bestAvailableCandidate(
+            in: Data(xml.utf8),
+            channelIdentifier: "beta",
+            currentBuildVersion: "100",
+            currentSystemVersion: "14.4.0"
+        )
+
+        #expect(candidate == nil)
+    }
+
+    @Test func appcastFeedCandidateEvaluatorSelectsHighestEligibleVersion() {
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <item>
+              <sparkle:version>101</sparkle:version>
+            </item>
+            <item>
+              <sparkle:version>105</sparkle:version>
+              <sparkle:minimumSystemVersion>14.0.0</sparkle:minimumSystemVersion>
+            </item>
+            <item>
+              <sparkle:version>110</sparkle:version>
+              <sparkle:minimumSystemVersion>15.0.0</sparkle:minimumSystemVersion>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let candidate = AppcastFeedCandidateEvaluator.bestAvailableCandidate(
+            in: Data(xml.utf8),
+            channelIdentifier: "beta",
+            currentBuildVersion: "100",
+            currentSystemVersion: "14.4.0"
+        )
+
+        #expect(candidate == .init(channelIdentifier: "beta", versionString: "105"))
+    }
+
+    @Test func appcastFeedCandidateEvaluatorRejectsCandidateAboveMaximumSystemVersion() {
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <item>
+              <sparkle:version>105</sparkle:version>
+              <sparkle:maximumSystemVersion>14.0.0</sparkle:maximumSystemVersion>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let candidate = AppcastFeedCandidateEvaluator.bestAvailableCandidate(
+            in: Data(xml.utf8),
+            channelIdentifier: "beta",
+            currentBuildVersion: "100",
+            currentSystemVersion: "14.4.0"
+        )
+
+        #expect(candidate == nil)
+    }
+
+    @Test func appcastFeedCandidateEvaluatorSupportsEnclosureSparkleVersionAttribute() {
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <item>
+              <enclosure url="https://example.com/PCL.Mac.zip" sparkle:version="108" length="1" type="application/octet-stream" />
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let candidate = AppcastFeedCandidateEvaluator.bestAvailableCandidate(
+            in: Data(xml.utf8),
+            channelIdentifier: "beta",
+            currentBuildVersion: "100",
+            currentSystemVersion: "14.4.0"
+        )
+
+        #expect(candidate == .init(channelIdentifier: "beta", versionString: "108"))
     }
 
     @Test func sparkleChannelRoutingRejectsBetaPathForStable() {

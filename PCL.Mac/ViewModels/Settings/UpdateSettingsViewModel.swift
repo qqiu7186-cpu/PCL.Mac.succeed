@@ -6,7 +6,6 @@ final class UpdateSettingsViewModel: ObservableObject {
     enum ChannelOption: String, CaseIterable, Identifiable {
         case stable = ""
         case beta = "beta"
-        case betaGray = "beta-gray"
 
         var id: String { rawValue }
 
@@ -14,20 +13,24 @@ final class UpdateSettingsViewModel: ObservableObject {
             switch self {
             case .stable: "正式版 / Release"
             case .beta: "测试版 / Beta"
-            case .betaGray: "灰度测试 / Beta Gray"
             }
         }
 
         var description: String {
             switch self {
             case .stable: "稳定更新，适合日常使用。"
-            case .beta: "优先收到测试构建，可能包含未完全验证的改动。"
-            case .betaGray: "用于更小范围的预灰度测试，适合提前验证更新。"
+            case .beta: "会先检查灰度测试更新，再回退到普通测试版更新。"
             }
         }
 
         static func from(identifier: String?) -> ChannelOption {
-            guard let identifier, let option = ChannelOption(rawValue: identifier) else {
+            guard let identifier else {
+                return .stable
+            }
+            if identifier == "beta-gray" {
+                return .beta
+            }
+            guard let option = ChannelOption(rawValue: identifier) else {
                 return .stable
             }
             return option

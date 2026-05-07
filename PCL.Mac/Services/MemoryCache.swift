@@ -3,16 +3,17 @@ import Foundation
 final class MemoryCache<Key: Hashable, Value> {
     private let cache = NSCache<WrappedKey, Entry>()
 
-    init(countLimit: Int) {
+    init(countLimit: Int, totalCostLimit: Int = 0) {
         cache.countLimit = countLimit
+        cache.totalCostLimit = totalCostLimit
     }
 
     func object(forKey key: Key) -> Value? {
         cache.object(forKey: WrappedKey(key))?.value
     }
 
-    func setValue(_ value: Value, for key: Key) {
-        cache.setObject(Entry(value), forKey: WrappedKey(key))
+    func setValue(_ value: Value, for key: Key, cost: Int = 0) {
+        cache.setObject(Entry(value), forKey: WrappedKey(key), cost: cost)
     }
 
     private final class Entry {

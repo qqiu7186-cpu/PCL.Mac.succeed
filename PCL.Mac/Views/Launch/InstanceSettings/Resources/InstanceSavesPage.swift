@@ -144,9 +144,6 @@ struct InstanceSavesPage: View {
             instance = InstancePageLoader.loadInstance(id)
             reloadSaves()
         }
-        .onAppear {
-            reloadSaves()
-        }
     }
 
     private var searchBar: some View {

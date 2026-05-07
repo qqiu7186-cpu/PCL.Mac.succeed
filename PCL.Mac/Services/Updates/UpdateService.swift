@@ -9,7 +9,6 @@ import Foundation
 import AppKit
 import Core
 import Sparkle
-import Security
 
 enum SparkleChannelRouting {
     static let stableChannelIdentifier: String = "stable"
@@ -607,29 +606,13 @@ private extension OperatingSystemVersion {
 private final class UpdateIdentityStore {
     static let shared = UpdateIdentityStore()
 
-    private let service = "cn.gzitvs.PCL-Mac.update.identity"
-    private let account = "installation-user-id"
-
     func userID() -> String {
-        if let existing = readFromKeychain(), !existing.isEmpty {
+        if let existing = LauncherConfig.shared.softwareUpdateUserID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !existing.isEmpty {
             return existing
         }
 
-        if let legacy = LauncherConfig.shared.softwareUpdateUserID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !legacy.isEmpty {
-            if saveToKeychain(legacy) {
-                clearLegacyConfigUserID()
-                return legacy
-            }
-            return legacy
-        }
-
         let generatedID = "upd_" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
-        if saveToKeychain(generatedID) {
-            clearLegacyConfigUserID()
-            return generatedID
-        }
-
         LauncherConfig.mutate {
             $0.softwareUpdateUserID = generatedID
         }
@@ -639,63 +622,5 @@ private final class UpdateIdentityStore {
             err("保存更新用户标识失败：\(error.localizedDescription)")
         }
         return generatedID
-    }
-
-    private func clearLegacyConfigUserID() {
-        guard LauncherConfig.shared.softwareUpdateUserID != nil else { return }
-        LauncherConfig.mutate {
-            $0.softwareUpdateUserID = nil
-        }
-        do {
-            try LauncherConfig.save()
-        } catch {
-            err("清理旧版更新用户标识失败：\(error.localizedDescription)")
-        }
-    }
-
-    private func readFromKeychain() -> String? {
-        var query = keychainQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return value
-    }
-
-    private func saveToKeychain(_ value: String) -> Bool {
-        let data = Data(value.utf8)
-        var query = keychainQuery()
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if updateStatus == errSecSuccess {
-            return true
-        }
-
-        if updateStatus != errSecItemNotFound {
-            err("更新 Keychain 中的更新用户标识失败：\(updateStatus)")
-        }
-
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let addStatus = SecItemAdd(query as CFDictionary, nil)
-        if addStatus != errSecSuccess {
-            err("保存 Keychain 中的更新用户标识失败：\(addStatus)")
-            return false
-        }
-        return true
-    }
-
-    private func keychainQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
     }
 }

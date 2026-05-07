@@ -5,6 +5,8 @@ import SwiftScaffolding
 
 final class AppBootstrapService {
     static let shared = AppBootstrapService()
+    private static let archivePreviewCacheLifetime: TimeInterval = 7 * 24 * 60 * 60
+    private static let archivePreviewCacheByteLimit: Int64 = 128 * 1024 * 1024
 
     func runInitialBootstrap(isUnderTesting: Bool) {
         runStage("基础环境初始化") {
@@ -18,6 +20,7 @@ final class AppBootstrapService {
             for url in try FileManager.default.contentsOfDirectory(at: URLConstants.tempURL, includingPropertiesForKeys: nil) {
                 try FileManager.default.removeItem(at: url)
             }
+            pruneArchivePreviewCache()
         }
 
         runStage("版本清单恢复") {
@@ -86,6 +89,42 @@ final class AppBootstrapService {
 
     private func formatDuration(since startedAt: Date) -> String {
         String(format: "%.3fs", Date().timeIntervalSince(startedAt))
+    }
+
+    private func pruneArchivePreviewCache() {
+        let cacheDirectory = URLConstants.cacheURL.appending(path: "ArchivePreviewIcons")
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: cacheDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        let now = Date()
+        var files: [(url: URL, modifiedAt: Date, byteSize: Int64)] = entries.compactMap { url in
+            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else {
+                return nil
+            }
+            return (url, values.contentModificationDate ?? .distantPast, Int64(values.fileSize ?? 0))
+        }
+
+        for file in files where now.timeIntervalSince(file.modifiedAt) > Self.archivePreviewCacheLifetime {
+            try? FileManager.default.removeItem(at: file.url)
+        }
+
+        files.removeAll { now.timeIntervalSince($0.modifiedAt) > Self.archivePreviewCacheLifetime }
+        var totalSize = files.reduce(Int64(0)) { $0 + $1.byteSize }
+        guard totalSize > Self.archivePreviewCacheByteLimit else { return }
+
+        for file in files.sorted(by: { $0.modifiedAt < $1.modifiedAt }) {
+            try? FileManager.default.removeItem(at: file.url)
+            totalSize -= file.byteSize
+            if totalSize <= Self.archivePreviewCacheByteLimit {
+                break
+            }
+        }
     }
 
     private init() {}

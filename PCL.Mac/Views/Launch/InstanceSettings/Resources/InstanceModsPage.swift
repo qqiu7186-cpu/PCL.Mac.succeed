@@ -84,9 +84,6 @@ struct InstanceModsPage: View {
             instance = InstancePageLoader.loadInstance(id)
             reloadMods()
         }
-        .onAppear {
-            reloadMods()
-        }
     }
 
     private var unavailableState: some View {

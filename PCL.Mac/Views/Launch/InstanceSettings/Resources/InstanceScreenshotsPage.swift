@@ -38,7 +38,7 @@ struct InstanceScreenshotsPage: View {
                     )
                 } else {
                     ScrollView {
-                        VStack(spacing: 12) {
+                        LazyVStack(spacing: 12) {
                             InstanceSettingsSectionCard("快捷操作") {
                                 HStack(spacing: 16) {
                                     MyButton("打开截图文件夹") { openScreenshotsFolder(instance) }
@@ -80,9 +80,6 @@ struct InstanceScreenshotsPage: View {
         }
         .task(id: id) {
             instance = InstancePageLoader.loadInstance(id)
-            reloadScreenshots()
-        }
-        .onAppear {
             reloadScreenshots()
         }
     }

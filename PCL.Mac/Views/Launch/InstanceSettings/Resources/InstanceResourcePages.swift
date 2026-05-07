@@ -132,9 +132,6 @@ struct InstanceFolderResourcePage: View {
             instance = InstancePageLoader.loadInstance(id)
             reloadFiles()
         }
-        .onAppear {
-            reloadFiles()
-        }
     }
 
     private func emptyState(_ instance: MinecraftInstance) -> some View {
@@ -527,9 +524,6 @@ struct InstanceSchematicsPage: View {
         }
         .task(id: id) {
             instance = InstancePageLoader.loadInstance(id)
-            reloadFiles()
-        }
-        .onAppear {
             reloadFiles()
         }
     }

@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Core
 import UniformTypeIdentifiers
+import ImageIO
 
 struct InstanceSettingsBackground<Content: View>: View {
     private let content: Content
@@ -504,7 +505,7 @@ struct InstanceSettingsLocalImage: View {
 
     var body: some View {
         Group {
-            if let image = NSImage(contentsOf: url) {
+            if let image = downsampledImage {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
@@ -519,5 +520,23 @@ struct InstanceSettingsLocalImage: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    private var downsampledImage: NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let maxPixelSize = max(size.width, size.height) * scale
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceThumbnailMaxPixelSize: max(Int(maxPixelSize.rounded(.up)), 1)
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: size)
     }
 }

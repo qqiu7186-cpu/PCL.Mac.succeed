@@ -6,7 +6,10 @@ import Core
 actor RemoteImageService {
     static let shared = RemoteImageService()
 
-    private let imageCache = MemoryCache<String, NSImage>(countLimit: 256)
+    private let imageCache = MemoryCache<String, NSImage>(
+        countLimit: 192,
+        totalCostLimit: 96 * 1024 * 1024
+    )
     private var inFlightTasks: [String: Task<Data, Error>] = [:]
     private let session: URLSession
 
@@ -36,7 +39,7 @@ actor RemoteImageService {
         if let task = inFlightTasks[key] {
             let data = try await task.value
             let image = try decodeImage(from: data, targetSize: targetSize)
-            imageCache.setValue(image, for: key)
+            imageCache.setValue(image, for: key, cost: image.cacheCost)
             return image
         }
 
@@ -49,7 +52,7 @@ actor RemoteImageService {
         defer { inFlightTasks[key] = nil }
         let data = try await task.value
         let image = try decodeImage(from: data, targetSize: targetSize)
-        imageCache.setValue(image, for: key)
+        imageCache.setValue(image, for: key, cost: image.cacheCost)
         return image
     }
 
@@ -107,12 +110,25 @@ actor RemoteImageService {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceShouldCache: false,
             kCGImageSourceThumbnailMaxPixelSize: max(Int(maxPixelSize.rounded(.up)), 1)
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             return nil
         }
         return NSImage(cgImage: cgImage, size: targetSize)
+    }
+}
+
+private extension NSImage {
+    var cacheCost: Int {
+        if let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return cgImage.bytesPerRow * cgImage.height
+        }
+        if let bitmap = representations.compactMap({ $0 as? NSBitmapImageRep }).first {
+            let bitsPerPixel = max(bitmap.bitsPerPixel, 32)
+            return bitmap.pixelsWide * bitmap.pixelsHigh * bitsPerPixel / 8
+        }
+        return 0
     }
 }

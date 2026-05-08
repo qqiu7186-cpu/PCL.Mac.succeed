@@ -79,6 +79,25 @@ struct AppArchitectureTests {
         }
     }
 
+    @Test @MainActor func resourceInstallViewModelIncludesSelectedInstanceGroupInDisplayedVersions() {
+        let target = ProjectInstallTarget(id: "project", title: "Physics Mod", type: .mod)
+        let viewModel = ResourceInstallViewModel(target: target)
+
+        let selectedKey = ResourceInstallViewModel.VersionMapKey(loader: .forge, version: .init("1.21.11"))
+        let otherKey = ResourceInstallViewModel.VersionMapKey(loader: .forge, version: .init("1.21.10"))
+        let selectedVersion = makeProjectVersionModel(id: "selected", gameVersion: "1.21.11", loader: .forge)
+        let otherVersion = makeProjectVersionModel(id: "other", gameVersion: "1.21.10", loader: .forge)
+
+        viewModel.selectedVersionGroup = (selectedKey, [selectedVersion])
+        viewModel.versionList = [(otherKey, [otherVersion])]
+
+        let displayed = viewModel.displayedVersionList
+
+        #expect(displayed.count == 2)
+        #expect(displayed.first?.0 == selectedKey)
+        #expect(displayed.first?.1.first?.id == "selected")
+    }
+
     @Test @MainActor func favoritesDownloadViewModelLoadsProjectsFromInjectedService() async throws {
         let service = FakeModrinthService(searchBehavior: .success(try makeSearchResponse()))
         let viewModel = FavoritesDownloadViewModel(dependencies: .init(modrinthService: service))
@@ -397,6 +416,21 @@ struct AppArchitectureTests {
         #expect(options.customWindowTitle == "自定义标题")
         #expect(options.additionalGameArguments == ["--fullscreen"])
     }
+}
+
+private func makeProjectVersionModel(id: String, gameVersion: String, loader: ModLoader?) -> ProjectVersionModel {
+    .init(
+        id: id,
+        name: "Test",
+        version: "1.0.0",
+        downloads: "1",
+        datePublished: "today",
+        requiredDependencies: [],
+        type: .release,
+        primaryFile: nil,
+        gameVersion: gameVersion,
+        loader: loader
+    )
 }
 
 private struct FakeDiagnosticsSnapshotProvider: DiagnosticsSnapshotProviding {

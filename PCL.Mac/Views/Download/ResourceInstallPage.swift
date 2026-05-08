@@ -22,10 +22,11 @@ struct ResourceInstallPage: View {
         CardContainer {
             headerCard
 
-            if viewModel.loaded, let versionList = viewModel.versionList {
+            if viewModel.loaded {
+                let versionList = viewModel.displayedVersionList
                 filtersCard(versionList: versionList)
 
-                if filteredVersionGroups(from: versionList).isEmpty {
+                if versionList.isEmpty || filteredVersionGroups(from: versionList).isEmpty {
                     MyCard("版本列表", foldable: false) {
                         MyText("当前筛选条件下没有可用版本。", color: .colorGray3)
                     }

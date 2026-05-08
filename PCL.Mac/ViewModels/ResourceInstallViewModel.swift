@@ -29,6 +29,17 @@ class ResourceInstallViewModel: ObservableObject {
         project?.title ?? target.title
     }
 
+    public var displayedVersionList: VersionList {
+        guard let versionList else {
+            return selectedVersionGroup.map { [$0] } ?? []
+        }
+
+        if let selectedVersionGroup {
+            return [selectedVersionGroup] + versionList
+        }
+        return versionList
+    }
+
     @MainActor
     public init(
         target: ProjectInstallTarget,
